@@ -38,10 +38,15 @@ jobs:
           set -euo pipefail
           export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          command -v sdkmanager || "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager --install 'platforms;android-36' 'platforms;android-35' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'platform-tools'
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print | sort -V | tail -n 1)"
+          if [[ -z "$SDKMANAGER" ]]; then
+            echo "Android SDK Command-line Tools não estão instalados no runner." >&2
+            exit 1
+          fi
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          "$SDKMANAGER" --version
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --install 'platforms;android-36' 'platforms;android-35' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'platform-tools'
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
       - name: Instalar dependências React, PeerJS e Tauri
