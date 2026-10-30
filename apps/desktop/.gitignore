@@ -1,1 +1,3 @@
 artifacts/
+
+src-tauri/tauri.signing.generated.json

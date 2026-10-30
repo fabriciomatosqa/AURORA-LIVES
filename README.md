@@ -1,6 +1,6 @@
 # AURORA LIVES
 
-**Versão 0.0.5 (prévia) — Atualizações online**
+**Próxima versão planejada: 0.0.6 — assinatura digital Windows (pendente de certificado confiável)**
 
 Aplicativo desktop de comunicação para Windows e Linux com a logo cristalina AURORA. **Um único instalador para todos:** qualquer pessoa pode criar uma sala, convidar outras pessoas, conversar e tentar compartilhar voz/tela, sem contas nem servidor pago.
 
@@ -31,7 +31,7 @@ Em P2P malha, o transmissor envia um fluxo para cada espectador. Com grupos gran
 
 **Os testes CI e simulações automatizadas não comprovam o funcionamento real entre duas redes nem a captura de áudio/tela em Windows e Linux.** Esses recursos permanecem experimentais e devem ser validados em computadores físicos. WebView2 e WebKitGTK podem se comportar de forma diferente.
 
-Os convites são secretos temporários: quem souber o código pode entrar. Não compartilhe publicamente. A identidade não é autenticada. O transporte WebRTC é criptografado, mas não verifica a identidade do usuário. Instaladores não assinados.
+Os convites são secretos temporários: quem souber o código pode entrar. Não compartilhe publicamente. A identidade não é autenticada. O transporte WebRTC é criptografado, mas não verifica a identidade do usuário. As versões até 0.0.5 permanecem sem assinatura. A versão 0.0.6 só poderá ser publicada quando houver um certificado de assinatura de código confiável e o pipeline verificar as assinaturas do executável e do instalador.
 
 ## Atualização online a partir da versão 0.0.5
 
@@ -40,6 +40,12 @@ O aplicativo verifica ao iniciar e a cada seis horas se existe release mais rece
 **Primeira instalação:** versões 0.0.4 e anteriores ainda não sabem verificar atualizações; instale 0.0.5 uma vez pela [página de releases](https://github.com/fabriciomatosqa/AURORA-LIVES/releases). As próximas versões aparecerão dentro do AURORA LIVES.
 
 Leia [docs/online-updates.md](docs/online-updates.md) para detalhes e limitações.
+## Assinatura digital Windows — 0.0.6
+
+O código prepara a assinatura Authenticode do executável e do instalador NSIS, com certificado confiável e marcação de tempo. **A entrega 0.0.6 ainda não foi assinada nem publicada.** Para habilitar, o proprietário precisa obter um certificado de assinatura de código válido, com PFX exportável, e cadastrar dois Secrets no GitHub Actions. O pipeline **não produz instalador Windows sem assinatura válida**, nem publica uma release conjunta sem os dois instaladores.
+
+Consulte [docs/windows-code-signing.md](docs/windows-code-signing.md). Não envie a chave privada ou a senha por chat, commits ou issues.
+
 ## Desenvolvimento
 
 ```bash

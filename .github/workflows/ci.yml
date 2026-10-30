@@ -69,6 +69,19 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf
       - name: Install JavaScript dependencies
         run: npm install --no-audit --no-fund
+      - name: Validate release signing fails closed without certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:AURORA_CODESIGN_PFX_BASE64 = ""
+          $env:AURORA_CODESIGN_PFX_PASSWORD = ""
+          & pwsh -NoProfile -NonInteractive -File scripts/prepare-windows-signing.ps1 *> $null
+          if ($LASTEXITCODE -eq 0) { throw "O pipeline permitiu preparar assinatura sem certificado." }
+          if (Test-Path src-tauri/tauri.signing.generated.json) { throw "Configuração de assinatura criada sem certificado." }
+          $env:AURORA_CODESIGN_THUMBPRINT = ""
+          & pwsh -NoProfile -NonInteractive -File scripts/verify-windows-signing.ps1 *> $null
+          if ($LASTEXITCODE -eq 0) { throw "O pipeline aceitou assinatura sem verificação." }
+          Write-Host "A geração de release falha corretamente na ausência de certificado."
       - name: Generate icons from original Aurora emblem
         run: npm run icons
       - name: Validate Tauri native crate

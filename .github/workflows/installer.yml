@@ -12,7 +12,7 @@ jobs:
   installers:
     name: Instalador ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 80
     strategy:
       fail-fast: false
       matrix:
@@ -41,8 +41,25 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf
       - name: Dependências JavaScript
         run: npm install --no-audit --no-fund
-      - name: Compilar aplicativo P2P
-        run: npm run package:desktop -- --bundles ${{ matrix.bundle }}
+      # Windows releases MUST have a trusted Authenticode certificate.
+      # Never silently fall back to unsigned builds.
+      - name: Exigir certificado confiável para assinatura Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          AURORA_CODESIGN_PFX_BASE64: ${{ secrets.AURORA_CODESIGN_PFX_BASE64 }}
+          AURORA_CODESIGN_PFX_PASSWORD: ${{ secrets.AURORA_CODESIGN_PFX_PASSWORD }}
+        run: ./scripts/prepare-windows-signing.ps1
+      - name: Compilar Linux (.deb)
+        if: runner.os == 'Linux'
+        run: npm run package:desktop -- --bundles deb
+      - name: Compilar Windows assinado (.exe)
+        if: runner.os == 'Windows'
+        run: npm run package:desktop -- --bundles nsis --config src-tauri/tauri.signing.generated.json
+      - name: Validar assinatura Authenticode do aplicativo e instalador
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify-windows-signing.ps1
       - name: Guardar instalador
         uses: actions/upload-artifact@v4
         with:
