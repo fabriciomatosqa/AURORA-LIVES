@@ -42,3 +42,32 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Typecheck and build
         run: npm run build
+
+  tauri:
+    name: Tauri desktop compile
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux native prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf
+      - name: Install JavaScript dependencies
+        run: npm install --no-audit --no-fund
+      - name: Generate icons from original Aurora emblem
+        run: npm run icons
+      - name: Validate Tauri native crate
+        run: cargo check --manifest-path src-tauri/Cargo.toml
