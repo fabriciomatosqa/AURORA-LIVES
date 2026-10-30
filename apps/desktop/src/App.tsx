@@ -4,7 +4,7 @@ import {addRoom,health,history,publish,rooms,stream,type Message,type Room} from
 
 function saved(key:string,fallback:string){try{return localStorage.getItem(key)||fallback}catch{return fallback}}
 function ordered(previous:Message[],added:Message[]){const known=new Map<string,Message>();[...previous,...added].forEach(m=>known.set(m.id,m));return [...known.values()].sort((a,b)=>a.createdAt.localeCompare(b.createdAt))}
-function Crystal({size=42}:{size?:number}){return <img src="/aurora-mark.png" alt="Logo cristalina AURORA" className="crystal" width={size} height={size}/>}
+function Crystal({size=42}:{size?:number}){return <img src="/aurora-mark.webp" alt="Logo cristalina AURORA" className="crystal" width={size} height={size}/>}
 
 export default function App(){
  const [channels,setChannels]=useState<Room[]>([]);
