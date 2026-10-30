@@ -7,6 +7,16 @@ mod updater;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
+    // Android WebView has its own media permission layer in addition to the
+    // RECORD_AUDIO runtime permission in AndroidManifest. Allow only the
+    // microphone request; Android still asks the user for OS authorization.
+    // Camera/location and every other permission keep their default behavior.
+    #[cfg(target_os = "android")]
+    let builder = builder.on_permission_request(|_, kind| match kind {
+        tauri::webview::PermissionKind::Microphone => tauri::webview::PermissionResponse::Allow,
+        _ => tauri::webview::PermissionResponse::Default,
+    });
+
     #[cfg(desktop)]
     let builder = builder
         .manage(updater::UpdateService::new().expect("failed to initialize AURORA updater"))
