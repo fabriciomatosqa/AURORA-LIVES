@@ -12,7 +12,7 @@ Aplicativo de comunicação desktop para **Windows e Linux**, inspirado nos flux
 - Backend: Go.
 - Mídia (próximas etapas): WebRTC + LiveKit autogerenciado (SFU).
 - Banco de dados (próximas etapas): PostgreSQL.
-- Distribuição futura: Windows e Linux.
+- Instaladores de prévia: Windows (NSIS .exe) e Linux Ubuntu/Debian (.deb); **um único aplicativo** para transmissores e espectadores no futuro.
 
 ## Iniciar o ambiente de desenvolvimento
 
@@ -33,7 +33,9 @@ npm install
 npm run dev
 ```
 
-Abrir http://localhost:1420 para experimentar a interface. O app desktop nativo pode ser iniciado com `npm run tauri dev`.
+Abrir http://localhost:1420 para experimentar a interface. Para abrir o aplicativo nativo **com a API local integrada**, use `npm run dev:native` dentro de `apps/desktop` (exige Go e Rust para compilar). Os instaladores gerados já incluem a API local e não exigem Go ou Node no computador de destino.
+
+**Atenção:** a prévia instalada funciona como chat local de demonstração. A instalação é igual para todos, mas ainda **não conecta pessoas em computadores diferentes**: isso exigirá a infraestrutura comum de autenticação, sinalização e SFU planejada. Ninguém precisará instalar um aplicativo separado de servidor para compartilhar ou assistir no produto final.
 
 O serviço de desenvolvimento escuta por padrão **127.0.0.1:8787**. O chat funciona apenas no mesmo computador; dados são mantidos em memória e perdidos ao reiniciar. Ainda não é seguro nem apropriado para hospedar publicamente. O nome de usuário é apenas um apelido local, não identidade verificada.
 
@@ -54,6 +56,6 @@ A identidade oficial é o **emblema cristalino triangular AURORA**. Não redesen
 2. Spaces/canais/convites com permissões.
 3. VoIP via LiveKit (microfone, dispositivos).
 4. Compartilhamento de tela, áudio do sistema, vídeo e otimização para 1080p60.
-5. Instaladores assinados e atualização integrada.
+5. Assinatura dos instaladores e atualização integrada (os pacotes desta prévia ainda **não são assinados**).
 
 Consulte [docs/architecture.md](docs/architecture.md) para decisões técnicas e limitações.

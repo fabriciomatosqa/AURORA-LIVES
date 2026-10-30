@@ -8,7 +8,10 @@
     "build": "tsc --noEmit && vite build",
     "tauri": "tauri",
     "icons": "tauri icon src-tauri/icons/source.png",
-    "pretauri": "npm run icons"
+    "pretauri": "npm run icons",
+    "sidecar": "node scripts/build-sidecar.mjs",
+    "dev:native": "npm run sidecar && npm run tauri dev",
+    "package:desktop": "npm run sidecar && npm run icons && tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

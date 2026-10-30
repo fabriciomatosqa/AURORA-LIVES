@@ -60,6 +60,10 @@ jobs:
         with:
           node-version: '22'
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/api/go.mod
+          cache: false
       - name: Linux native prerequisites
         if: runner.os == 'Linux'
         run: |
@@ -69,5 +73,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Generate icons from original Aurora emblem
         run: npm run icons
+      - name: Build bundled local backend
+        run: npm run sidecar
       - name: Validate Tauri native crate
         run: cargo check --manifest-path src-tauri/Cargo.toml
