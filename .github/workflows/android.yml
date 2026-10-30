@@ -83,3 +83,45 @@ jobs:
             apps/desktop/dist-android/SHA256SUMS-ANDROID.txt
           retention-days: 30
           if-no-files-found: error
+
+  android-preview-asset:
+    name: Anexar APK de teste à release GitHub
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [android-arm64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: AURORA-LIVES-Android-ARM64-DEBUG-PREVIEW
+          path: android-preview
+      - name: Validar APK e aguardar publicação dos instaladores desktop
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          (cd android-preview && sha256sum -c SHA256SUMS-ANDROID.txt)
+          TAG="v$(node -p "require('./apps/desktop/package.json').version")-preview"
+          echo "Anexando APK DEBUG experimental à release $TAG."
+          ready=0
+          for attempt in $(seq 1 90); do
+            if gh release view "$TAG" --json isDraft --jq '.isDraft' 2>/dev/null | grep -qx 'false'; then
+              ready=1
+              break
+            fi
+            sleep 20
+          done
+          if [[ "$ready" != 1 ]]; then
+            echo "Release de Windows/Linux não foi publicada; APK permanece acessível nos artefatos da Action." >&2
+            exit 1
+          fi
+          gh release upload "$TAG" \
+            android-preview/AURORA-LIVES-Android-arm64-DEBUG.apk \
+            android-preview/SHA256SUMS-ANDROID.txt
+          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx 'AURORA-LIVES-Android-arm64-DEBUG.apk'
+          echo "APK DEBUG disponibilizado no mesmo GitHub Release; não possui assinatura persistente." >> "$GITHUB_STEP_SUMMARY"
