@@ -43,11 +43,11 @@ O Windows usa **Inno Setup por usuário** (sem exigir conta Microsoft ou direito
 
 **Migração:** se já existir instalação anterior do AURORA LIVES pelo instalador NSIS (0.0.4/0.0.5), ela pode aparecer separadamente no Windows. Caso aconteça, feche o aplicativo e desinstale a versão antiga pelo Windows, preservando a nova instalação Inno Setup.
 
-## Atualização online a partir da versão 0.0.5
+## Atualização online pelo GitHub
 
 O aplicativo verifica ao iniciar e a cada seis horas se existe release mais recente no GitHub. Em **Configurações → Atualizações online**, você pode procurar, baixar com progresso e abrir o instalador diretamente, sem encontrar a versão no navegador. O download é verificado com SHA-256 e o usuário confirma a instalação. No Linux, o gerenciador de pacotes pode solicitar senha.
 
-**Primeira instalação:** versões 0.0.4 e anteriores ainda não sabem verificar atualizações; instale 0.0.5 uma vez pela [página de releases](https://github.com/fabriciomatosqa/AURORA-LIVES/releases). As próximas versões aparecerão dentro do AURORA LIVES.
+**Primeira instalação do novo canal:** instale a versão **0.0.6** uma vez pela [página de releases](https://github.com/fabriciomatosqa/AURORA-LIVES/releases). A 0.0.4 não possui atualização integrada; a 0.0.5 encontra novas versões pelo GitHub, mas ainda abre o instalador interativo. A partir da 0.0.6, o fluxo de atualização segue o padrão do AutoFill.
 
 Leia [docs/online-updates.md](docs/online-updates.md) para detalhes e limitações.
 ## Desenvolvimento
@@ -58,8 +58,10 @@ npm install
 npm run test
 npm run build
 npm run dev:native
-# gerar instalador
-npm run package:desktop
+# Linux: gerar instalador .deb
+npm run package:desktop -- --bundles deb
+# Windows: CI usa Tauri --no-bundle e Inno Setup 6
+# Consulte apps/desktop/packaging/windows/AURORA-LIVES.iss
 ```
 
 Consulte [docs/architecture.md](docs/architecture.md) e as Issues do projeto.
