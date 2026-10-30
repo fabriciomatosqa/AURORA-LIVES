@@ -73,3 +73,30 @@ jobs:
         run: npm run icons
       - name: Validate Tauri native crate
         run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  visual-smoke:
+    name: Frontend visual smoke · Chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Confirmar navegador disponível
+        run: command -v google-chrome || command -v chromium
+      - name: Instalar dependências JavaScript
+        run: npm install --no-audit --no-fund
+      - name: Inspecionar interface em várias resoluções
+        run: npm run test:visual
+      - name: Guardar capturas para revisão visual
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-ui-screenshots
+          path: apps/desktop/artifacts/ui/*.png
+          if-no-files-found: warn
+          retention-days: 14
