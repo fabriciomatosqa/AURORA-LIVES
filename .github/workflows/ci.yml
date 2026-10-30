@@ -102,3 +102,48 @@ jobs:
           path: apps/desktop/artifacts/ui/*.png
           if-no-files-found: warn
           retention-days: 14
+
+  windows-inno-smoke:
+    name: Windows · validar instalador Inno Setup
+    runs-on: windows-latest
+    timeout-minutes: 80
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Instalar dependências JavaScript
+        run: npm install --no-audit --no-fund
+      - name: Compilar binário Tauri
+        shell: pwsh
+        run: |
+          npm run icons
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar ícones Aurora." }
+          npm run tauri -- build --no-bundle
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao compilar o aplicativo." }
+      - name: Compilar instalador Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup 6 indisponível." }
+          $env:AURORA_VERSION = (node -p "require('./package.json').version").Trim()
+          & $iscc "packaging/windows/AURORA-LIVES.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Falha na criação do instalador." }
+          $setup = "installer-win/AURORA-LIVES-Windows-x64-Setup.exe"
+          if (-not (Test-Path $setup)) { throw "O instalador não foi encontrado." }
+          $bytes = (Get-Item $setup).Length
+          if ($bytes -lt 100000) { throw "Instalador inesperadamente pequeno." }
+          $hash = (Get-FileHash -Algorithm SHA256 $setup).Hash
+          Write-Host "Inno Setup OK: $bytes bytes, SHA256 $hash"
+      - name: Guardar instalador somente para teste do PR
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-inno-smoke-installer
+          path: apps/desktop/installer-win/*.exe
+          if-no-files-found: error
+          retention-days: 3

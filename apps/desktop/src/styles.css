@@ -419,3 +419,35 @@ a { color: var(--accent-blue); }
 @keyframes update-spin { to { transform: rotate(360deg); } }
 @media (max-width: 950px) { .update-indicator span:nth-child(2) { max-width: 110px; overflow: hidden; text-overflow: ellipsis; } }
 @media (max-width: 680px) { .update-indicator span:nth-child(2) { display: none; } .update-indicator { padding: 9px; } }
+
+/* AURORA GitHub-only updater: AutoFill-style invitation, opt-in and progress. */
+.updates-channel-toggle { display:flex; align-items:center; gap:11px; margin:13px 0 0;
+ padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--surface-muted);
+ color:var(--text-soft); cursor:pointer; }
+.updates-channel-toggle input { width:17px; height:17px; accent-color:var(--accent-strong); flex:none; cursor:pointer; }
+.updates-channel-toggle>span { display:flex; flex-direction:column; gap:4px; }
+.updates-channel-toggle strong { font-size:11px; }
+.updates-channel-toggle small { color:var(--muted); font-size:10px; line-height:1.5; }
+.updates-cancel-button { width:100%; display:flex; align-items:center; justify-content:center; gap:7px; margin-top:8px;
+ border:1px solid var(--line-strong); border-radius:10px; color:var(--text-soft);
+ padding:10px 13px; background:var(--surface); font-size:11px; font-weight:760; }
+.updates-cancel-button:hover { color:var(--danger); background:var(--surface-hover); }
+.update-prompt { position:absolute; z-index:26; right:20px; bottom:20px; width:min(382px,calc(100% - 40px));
+ padding:19px; border-radius:17px; color:var(--text);
+ background:var(--surface-alt); box-shadow:0 20px 70px var(--shadow), inset 0 1px rgba(255,255,255,.08);
+ border:1px solid rgba(115,212,221,.46); animation:toast-in .28s ease-out both; }
+.update-prompt-top { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:11px; }
+.update-prompt-top>span { display:flex; align-items:center; gap:7px; color:var(--accent); font-size:9px; font-weight:850; letter-spacing:1.1px; }
+.update-prompt-top>button { display:grid; place-items:center; width:28px; height:28px; border:0; color:var(--muted); background:transparent; border-radius:8px; }
+.update-prompt-top>button:hover { background:var(--surface-hover); color:var(--text); }
+.update-prompt>strong { display:block; font-size:19px; letter-spacing:-.45px; }
+.update-prompt>p { margin:9px 0 16px; font-size:11px; color:var(--text-soft); line-height:1.7; }
+.update-prompt-actions { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+.update-prompt-actions button { display:flex; align-items:center; justify-content:center; gap:7px; padding:11px 8px; min-width:0;
+ border-radius:10px; font-size:11px; font-weight:800; }
+.update-prompt-later { border:1px solid var(--line-strong); background:var(--surface); color:var(--text-soft); }
+.update-prompt-now { border:0; background:var(--gradient-button); color:var(--accent-ink); }
+.update-prompt-actions button:hover { filter:brightness(1.06); }
+.update-prompt>small { display:flex; align-items:flex-start; gap:7px; color:var(--muted); font-size:9px; line-height:1.6; margin-top:14px; }
+.update-prompt>small svg { color:var(--accent-green); flex:none; }
+@media(max-width:740px){.update-prompt { right:12px; bottom:12px; }}

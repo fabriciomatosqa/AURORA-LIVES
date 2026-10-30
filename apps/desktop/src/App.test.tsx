@@ -10,7 +10,7 @@ describe('nova interface AURORA LIVES', () => {
     expect(html).toContain('id="invite-code"');
     expect(html).toContain('Sem cadastro');
     expect(html).toContain('AURORA LIVES');
-    expect(html).toContain('Prévia 0.0.5');
+    expect(html).toContain('Prévia 0.0.6');
   });
 
   it('mantém a logo original e as regiões de navegação acessíveis', () => {

@@ -12,6 +12,7 @@ import { capabilities, capturePreset, type QualityMode } from './p2p/quality';
 import { inviteMessage, readSavedInvites, saveInvite, SAVED_INVITES_KEY, type SavedInvite } from './p2p/invites';
 import { useOnlineUpdater } from './updates/useOnlineUpdater';
 import { UpdateIndicator, UpdateSettings } from './updates/UpdateSettings';
+import { UpdatePrompt } from './updates/UpdatePrompt';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -360,7 +361,7 @@ export default function App() {
         <UpdateIndicator updater={updater} onClick={() => setSettingsOpen(true)}/>
         <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
           <span className="status-indicator"/>
-          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.5'}
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.6'}
         </span>
         <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
@@ -595,6 +596,7 @@ export default function App() {
         </div>
       </>}
 
+      <UpdatePrompt updater={updater} connected={connected}/>
       {(feedback || room.error) && <div className={'aurora-toast ' + (room.error ? 'toast-error' : '')} role="status">
         <span className="toast-icon">{room.error ? <Info size={17}/> : <Check size={17}/>}</span>
         <p>{room.error || feedback}</p>
@@ -657,7 +659,7 @@ export default function App() {
           <UpdateSettings updater={updater} connected={connected}/>
           <div className="privacy-disclaimer"><LockKeyhole size={19}/><p>Esta versão usa apelidos locais, não contas. Quem souber o código poderá entrar na sala enquanto o anfitrião estiver online.</p></div>
         </div>
-        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.5</span>
+        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.6</span>
           <button onClick={() => setSettingsOpen(false)}>Concluído <ArrowRight size={17}/></button></footer>
       </section>
     </div>}

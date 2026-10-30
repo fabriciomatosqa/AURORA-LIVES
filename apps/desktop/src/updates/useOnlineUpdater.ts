@@ -10,41 +10,51 @@ export type UpdateInfo = {
   publishedAt: string | null;
   sizeBytes: number;
 };
-
-export type UpdateCheck = {
-  currentVersion: string;
-  latest: UpdateInfo | null;
-};
-
-export type UpdateProgress = {
-  downloadedBytes: number;
-  totalBytes: number;
-  percent: number;
-};
-
+export type UpdateCheck = { currentVersion: string; latest: UpdateInfo | null };
+export type UpdateProgress = { downloadedBytes: number; totalBytes: number; percent: number };
 export type UpdateStatus =
   | 'unsupported' | 'checking' | 'up-to-date' | 'available'
   | 'downloading' | 'downloaded' | 'installing' | 'error';
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const REMIND_AFTER_MS = 3 * 60 * 60 * 1000;
+const PREVIEW_KEY = 'aurora.updates.previews';
+const REMINDER_KEY = 'aurora.updates.snoozed';
 
+type SnoozedRelease = { tag: string; until: number };
+
+function storageRead(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function storageWrite(key: string, value: string): void {
+  try { localStorage.setItem(key, value); } catch { /* Optional setting */ }
+}
+function readSnooze(): SnoozedRelease | null {
+  try {
+    const value = JSON.parse(storageRead(REMINDER_KEY) || 'null') as unknown;
+    if (!value || typeof value !== 'object') return null;
+    const record = value as Partial<SnoozedRelease>;
+    if (typeof record.tag !== 'string' || typeof record.until !== 'number' || !Number.isFinite(record.until)) return null;
+    return { tag: record.tag, until: record.until };
+  } catch { return null; }
+}
 function readableError(error: unknown): string {
   if (typeof error === 'string') return error;
   if (error instanceof Error) return error.message;
   return 'Não foi possível completar a operação. Verifique sua conexão e tente novamente.';
 }
 
-/**
- * Native updater state shared by notification and settings UI.
- *
- * The browser preview never calls native APIs. The actual release/version/
- * checksum and executable selection are verified by the Rust backend.
+/** The GitHub-only update experience. No Store, account, or server needed.
+ * All integrity and installer checks remain in native Rust, not JavaScript.
  */
 export function useOnlineUpdater() {
   const supported = isTauri();
   const [status, setStatus] = useState<UpdateStatus>(() => supported ? 'checking' : 'unsupported');
-  const [currentVersion, setCurrentVersion] = useState('0.0.5');
+  const [currentVersion, setCurrentVersion] = useState('0.0.6');
   const [available, setAvailable] = useState<UpdateInfo | null>(null);
+  const [includePrereleases, setPreviews] = useState(() => storageRead(PREVIEW_KEY) !== 'false');
+  const [snoozed, setSnoozed] = useState<SnoozedRelease | null>(readSnooze);
+  const [clock, setClock] = useState(() => Date.now());
   const [progress, setProgress] = useState<UpdateProgress>({ downloadedBytes: 0, totalBytes: 0, percent: 0 });
   const [error, setError] = useState('');
   const running = useRef(false);
@@ -55,48 +65,48 @@ export function useOnlineUpdater() {
     setStatus(next);
   }, []);
 
+  const setIncludePrereleases = useCallback((enabled: boolean) => {
+    storageWrite(PREVIEW_KEY, String(enabled));
+    setPreviews(enabled);
+  }, []);
+
   const check = useCallback(async (manual = false) => {
     if (!supported || running.current || ['downloading', 'downloaded', 'installing'].includes(step.current)) return;
     running.current = true;
     setStep('checking');
     setError('');
     try {
-      const result = await invoke<UpdateCheck>('check_for_updates');
+      const result = await invoke<UpdateCheck>('check_for_updates', { includePrereleases });
       setCurrentVersion(result.currentVersion);
       setAvailable(result.latest);
       setStep(result.latest ? 'available' : 'up-to-date');
     } catch (cause) {
-      if (manual) {
-        setError(readableError(cause));
-        setStep('error');
-      } else {
-        // Silent startup checks never block the app's chat or other features.
-        setStep('error');
-        setError('Não foi possível consultar as atualizações no momento.');
-      }
+      setError(manual ? readableError(cause) : 'Não foi possível consultar o GitHub agora. O aplicativo continua funcionando.');
+      setStep('error');
     } finally {
       running.current = false;
     }
-  }, [supported, setStep]);
+  }, [supported, setStep, includePrereleases]);
 
   useEffect(() => {
     if (!supported) return;
     let active = true;
     void getVersion().then(version => {
       if (active) setCurrentVersion(version);
-    }).catch(() => { /* Fallback to release check */ });
+    }).catch(() => { /* The release API can still report the version. */ });
     return () => { active = false; };
   }, [supported]);
 
   useEffect(() => {
     if (!supported) return;
     void check(false);
-    const id = window.setInterval(() => { void check(false); }, CHECK_INTERVAL_MS);
-    return () => window.clearInterval(id);
+    const cadence = window.setInterval(() => { void check(false); }, CHECK_INTERVAL_MS);
+    const wake = window.setInterval(() => { setClock(Date.now()); }, 60 * 1000);
+    return () => { window.clearInterval(cadence); window.clearInterval(wake); };
   }, [check, supported]);
 
-  const download = useCallback(async () => {
-    if (!supported || !available || running.current) return;
+  const download = useCallback(async (): Promise<boolean> => {
+    if (!supported || !available || running.current) return false;
     running.current = true;
     setStep('downloading');
     setProgress({ downloadedBytes: 0, totalBytes: available.sizeBytes, percent: 0 });
@@ -109,37 +119,75 @@ export function useOnlineUpdater() {
           setProgress(received);
         }
       });
-      await invoke('download_update', { tag: available.tag });
+      await invoke('download_update', { tag: available.tag, includePrereleases });
       setProgress({ downloadedBytes: available.sizeBytes, totalBytes: available.sizeBytes, percent: 100 });
       setStep('downloaded');
+      return true;
     } catch (cause) {
-      setError(readableError(cause));
-      setStep('error');
+      const text = readableError(cause);
+      if (text.toLocaleLowerCase('pt-BR').includes('cancelado')) {
+        setStep('available');
+        setError('');
+      } else {
+        setError(text);
+        setStep('error');
+      }
+      return false;
     } finally {
       stopListening?.();
       running.current = false;
     }
-  }, [supported, available, setStep]);
+  }, [supported, available, includePrereleases, setStep]);
 
-  const install = useCallback(async () => {
-    if (!supported || running.current || step.current !== 'downloaded') return;
+  const cancel = useCallback(async () => {
+    if (!supported || step.current !== 'downloading') return;
+    try {
+      await invoke('cancel_update_download');
+    } catch (cause) {
+      setError(readableError(cause));
+    }
+  }, [supported]);
+
+  const install = useCallback(async (): Promise<boolean> => {
+    if (!supported || running.current || step.current !== 'downloaded') return false;
     running.current = true;
     setStep('installing');
     setError('');
     try {
       await invoke('install_update');
-      // On Windows, the native command exits the app after launching the setup.
-      // On Linux the OS package installer is opened and might require approval.
+      // Windows exits after launching Inno Setup. Linux opens its package manager.
       setStep('downloaded');
+      return true;
     } catch (cause) {
       setError(readableError(cause));
       setStep('downloaded');
+      return false;
     } finally {
       running.current = false;
     }
   }, [supported, setStep]);
 
-  return { supported, status, currentVersion, available, progress, error, check, download, install };
+  // Like AURORA AutoFill: "Sim" downloads, validates and starts installation
+  // after a single explicit approval (a connected room is confirmed first).
+  const updateNow = useCallback(async () => {
+    if (await download()) await install();
+  }, [download, install]);
+
+  const snooze = useCallback(() => {
+    if (!available) return;
+    const choice = { tag: available.tag, until: Date.now() + REMIND_AFTER_MS };
+    setSnoozed(choice);
+    storageWrite(REMINDER_KEY, JSON.stringify(choice));
+  }, [available]);
+
+  const notificationVisible = supported && status === 'available' && Boolean(available) &&
+    (!snoozed || snoozed.tag !== available?.tag || snoozed.until <= clock);
+
+  return {
+    supported, status, currentVersion, available, progress, error,
+    includePrereleases, setIncludePrereleases,
+    notificationVisible, snooze, check, download, cancel, install, updateNow
+  };
 }
 
 export type OnlineUpdater = ReturnType<typeof useOnlineUpdater>;
