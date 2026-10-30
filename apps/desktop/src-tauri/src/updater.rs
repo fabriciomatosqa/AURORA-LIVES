@@ -469,7 +469,7 @@ mod tests {
         r.assets[0].browser_download_url = "https://evil.example/setup.exe".to_owned();
         assert!(!suitable(&r, &Version::new(0,0,5), true));
         r.assets[0] = asset(installer_name(), &r.tag_name, MAX_DOWNLOAD + 1);
-        assert!(!suitable(&r, &Version::new(0,0,5)));
+        assert!(!suitable(&r, &Version::new(0,0,5), true));
     }
 
     #[test]
