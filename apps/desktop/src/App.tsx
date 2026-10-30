@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
-  Activity, ArrowRight, Check, ChevronDown, Copy, Hash,
+  Activity, ArrowRight, Bookmark, Check, ChevronDown, Copy, Gauge, Hash,
   Headphones, Home, Info, Link2, LockKeyhole, MessageCircle, Mic, MicOff,
-  MonitorUp, Moon, Plus, RadioTower, Send, Settings, ShieldCheck,
-  Sparkles, Sun, Users, VideoOff, Wifi, X,
+  MonitorUp, Moon, PictureInPicture2, Plus, RadioTower, Send, Settings, ShieldCheck,
+  Sparkles, Sun, Trash2, Users, VideoOff, Volume2, VolumeX, Wifi, X,
 } from 'lucide-react';
 import { RoomSession, emptyRoom, type RemoteMedia, type RoomSnapshot } from './p2p/session';
 import { cleanName, formatRoomCode, normalizeRoomCode } from './p2p/protocol';
+import { capabilities, capturePreset, type QualityMode } from './p2p/quality';
+import { inviteMessage, readSavedInvites, saveInvite, SAVED_INVITES_KEY, type SavedInvite } from './p2p/invites';
 import './p2p.css';
 
 function fromStorage(key: string, fallback: string): string {
@@ -16,6 +18,7 @@ function Crystal({ size = 42 }: { size?: number }) {
   return <img className="crystal" src="/aurora-mark.webp" alt="Emblema cristalino AURORA" width={size} height={size} />;
 }
 function StreamVideo({ stream, muted, label }: { stream: MediaStream; muted: boolean; label: string }) {
+  const [pipError, setPipError] = useState('');
   const element = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (!element.current) return;
@@ -23,12 +26,26 @@ function StreamVideo({ stream, muted, label }: { stream: MediaStream; muted: boo
     void element.current.play().catch(() => { /* user can press Play */ });
     return () => { if (element.current) element.current.srcObject = null; };
   }, [stream]);
+  async function pictureInPicture() {
+    if (!element.current || !document.pictureInPictureEnabled || !element.current.requestPictureInPicture) return;
+    try {
+      setPipError('');
+      await element.current.requestPictureInPicture();
+    } catch {
+      setPipError('Janela flutuante indisponível neste sistema.');
+    }
+  }
   return <div className="video-card">
     <video ref={element} autoPlay playsInline muted={muted} controls aria-label={label}/>
     <span className="video-label"><MonitorUp size={14}/> {label}</span>
+    {typeof document !== 'undefined' && document.pictureInPictureEnabled && <button type="button"
+      className="video-pip" title="Abrir em janela flutuante" onClick={() => void pictureInPicture()}>
+      <PictureInPicture2 size={17}/> Flutuante
+    </button>}
+    {pipError && <span className="pip-error">{pipError}</span>}
   </div>;
 }
-function RemoteAudio({ media, name }: { media: RemoteMedia; name: string }) {
+function RemoteAudio({ media, name, muted }: { media: RemoteMedia; name: string; muted: boolean }) {
   const element = useRef<HTMLAudioElement>(null);
   useEffect(() => {
     if (!element.current) return;
@@ -39,7 +56,7 @@ function RemoteAudio({ media, name }: { media: RemoteMedia; name: string }) {
   return <div className="audio-card">
     <span className="audio-avatar">{name.slice(0, 1).toUpperCase()}</span>
     <div><strong>{name}</strong><small>Áudio recebido</small></div>
-    <audio autoPlay controls ref={element} aria-label={'Áudio de ' + name}/>
+    <audio autoPlay controls muted={muted} ref={element} aria-label={'Áudio de ' + name}/>
   </div>;
 }
 export default function App() {
@@ -53,6 +70,15 @@ export default function App() {
   const [theme, setTheme] = useState(() => fromStorage('aurora.theme', 'dark'));
   const [busyMedia, setBusyMedia] = useState(false);
   const [membersExpanded, setMembersExpanded] = useState(true);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [deafened, setDeafened] = useState(false);
+  const [savedInvites, setSavedInvites] = useState<SavedInvite[]>(() =>
+    readSavedInvites(fromStorage(SAVED_INVITES_KEY, '')));
+  const [qualityPreference, setQualityPreference] = useState<QualityMode>(() => {
+    const value = fromStorage('aurora.quality', 'auto');
+    return ['auto', 'economy', 'balanced', 'high', 'ultra'].includes(value) ? value as QualityMode : 'auto';
+  });
+  const support = useMemo(capabilities, []);
   const session = useRef<RoomSession | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const connected = room.phase === 'connected';
@@ -67,18 +93,19 @@ export default function App() {
   useEffect(() => () => session.current?.stop(), []);
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }); }, [room.messages]);
 
-  function openRoom(mode: 'host' | 'guest') {
+  function openRoom(mode: 'host' | 'guest', fromSaved?: string) {
     if (typeof window.RTCPeerConnection === 'undefined') {
       setFeedback('Este sistema não disponibiliza WebRTC. Tente outro ambiente.');
       return;
     }
     setFeedback('');
     setCopied(false);
-    const code = mode === 'host' ? RoomSession.newCode() : normalizeRoomCode(invite);
+    const code = mode === 'host' ? RoomSession.newCode() : normalizeRoomCode(fromSaved || invite);
     if (!code) { setFeedback('Informe o código de 16 caracteres recebido do anfitrião.'); return; }
     session.current?.stop();
     const current = new RoomSession(cleanName(nickname), next => setRoom(next));
     session.current = current;
+    void current.setQuality(qualityPreference);
     if (mode === 'host') current.startHosting(code);
     else current.startJoining(code);
   }
@@ -91,14 +118,34 @@ export default function App() {
     setFeedback('');
   }
 
-  async function copyCode() {
+  async function copyCode(full = false) {
     try {
-      await navigator.clipboard.writeText(formatRoomCode(room.code));
+      await navigator.clipboard.writeText(full ? inviteMessage(room.code) : formatRoomCode(room.code));
       setCopied(true);
-      setFeedback('Código copiado. Envie-o somente a quem você deseja convidar.');
+      setFeedback(full ? 'Convite pronto para colar no WhatsApp.' : 'Código copiado. Compartilhe apenas com pessoas de confiança.');
     } catch {
       setFeedback('Não foi possível copiar automaticamente. Selecione o código exibido e copie.');
     }
+  }
+
+  function pinInvite() {
+    if (!room.code) return;
+    const result = saveInvite(savedInvites, room.code, 'Sala com ' + cleanName(nickname));
+    setSavedInvites(result);
+    try { localStorage.setItem(SAVED_INVITES_KEY, JSON.stringify(result)); } catch { /* unavailable */ }
+    setFeedback('Convite salvo neste computador. Só funcionará enquanto o anfitrião estiver na sala.');
+  }
+
+  function unpinInvite(code: string) {
+    const remaining = savedInvites.filter(item => item.code !== code);
+    setSavedInvites(remaining);
+    try { localStorage.setItem(SAVED_INVITES_KEY, JSON.stringify(remaining)); } catch { /* unavailable */ }
+  }
+
+  async function updateQuality(value: QualityMode) {
+    setQualityPreference(value);
+    try { localStorage.setItem('aurora.quality', value); } catch { /* unavailable */ }
+    await session.current?.setQuality(value);
   }
 
   function sendMessage(event: FormEvent<HTMLFormElement>) {
@@ -168,7 +215,7 @@ export default function App() {
       </div>
       <div className="connection">
         <span className={'dot ' + (connected ? 'on' : '')}/>
-        <div><strong>{connected ? 'Conexão P2P ativa' : room.phase === 'connecting' ? 'Conectando...' : 'Sem sala ativa'}</strong><small>WebRTC • Sem servidor pago</small></div>
+        <div><strong>{connected ? 'Conexão P2P ativa' : room.phase === 'reconnecting' ? 'Reconectando...' : room.phase === 'connecting' ? 'Conectando...' : 'Sem sala ativa'}</strong><small>WebRTC • Sem servidor dedicado</small></div>
         <Wifi size={16}/>
       </div>
       <div className="account">
@@ -183,7 +230,7 @@ export default function App() {
         <Hash className="teal" size={23}/>
         <div><strong>{connected ? 'sala-privada' : 'boas-vindas'}</strong><small>{connected ? 'Mensagens e mídia diretamente entre os participantes' : 'Crie ou entre em uma sala de comunicação'}</small></div>
         <span className="flex-grow"/>
-        <span className="version"><span className={'dot ' + (connected ? 'on' : '')}/> PRÉVIA 0.0.2</span>
+        <span className="version"><span className={'dot ' + (connected ? 'on' : '')}/> PRÉVIA 0.0.3</span>
       </header>
 
       {(room.phase === 'idle' || room.phase === 'error') && <section className="p2p-lobby">
@@ -208,13 +255,30 @@ export default function App() {
             <button className="secondary-action" onClick={() => openRoom('guest')} disabled={!normalizeRoomCode(invite)}>Entrar na sala <ArrowRight size={17}/></button>
           </div>
         </div>
+        {savedInvites.length > 0 && <section className="saved-invites" aria-label="Convites salvos neste computador">
+          <div className="saved-heading"><Bookmark size={17}/> Convites salvos neste computador</div>
+          {savedInvites.map(item => <div className="saved-entry" key={item.code}>
+            <span>{item.label}<small>{formatRoomCode(item.code)}</small></span>
+            <button className="secondary-action" onClick={() => openRoom('guest', item.code)}>Entrar</button>
+            <button aria-label={'Excluir convite ' + item.label} onClick={() => unpinInvite(item.code)}><Trash2 size={16}/></button>
+          </div>)}
+          <small>Estes códigos são privados e só funcionam enquanto o anfitrião estiver conectado.</small>
+        </section>}
         <p className="connection-note"><ShieldCheck size={16}/> Dados por WebRTC. O serviço gratuito PeerJS apenas apresenta os usuários; conexões restritivas podem precisar de TURN.</p>
+        <button className="diagnostics-trigger" onClick={() => setShowDiagnostics(value => !value)}><Gauge size={16}/> {showDiagnostics ? 'Ocultar diagnóstico' : 'Verificar compatibilidade do computador'}</button>
+        {showDiagnostics && <div className="capability-list">
+          <div><span>WebRTC</span><strong>{support.webRTC ? 'Disponível' : 'Indisponível'}</strong></div>
+          <div><span>API do microfone</span><strong>{support.microphoneApi ? 'Disponível' : 'Indisponível'}</strong></div>
+          <div><span>API de captura de tela</span><strong>{support.screenApi ? 'Disponível' : 'Indisponível'}</strong></div>
+          <div><span>Vídeo flutuante (PiP)</span><strong>{support.pictureInPicture ? 'Disponível' : 'Indisponível'}</strong></div>
+          <small>Este diagnóstico identifica recursos da plataforma, mas não comprova permissões ou conexão entre redes.</small>
+        </div>}
       </section>}
 
-      {room.phase === 'connecting' && <section className="p2p-wait">
+      {(room.phase === 'connecting' || room.phase === 'reconnecting') && <section className="p2p-wait">
         <div className="loading-orb"><Crystal size={92}/></div>
-        <h2>{host ? 'Preparando seu encontro...' : 'Procurando a sala...'}</h2>
-        <p>Conectando ao serviço gratuito de sinalização e negociando o canal direto.</p>
+        <h2>{room.phase === 'reconnecting' ? 'Restabelecendo a conexão...' : host ? 'Preparando seu encontro...' : 'Procurando a sala...'}</h2>
+        <p>{room.phase === 'reconnecting' ? 'Tentativa ' + room.reconnectAttempts + ' de 3. Verifique se o anfitrião continua online.' : 'Conectando ao serviço gratuito de sinalização e negociando o canal direto.'}</p>
         <button className="secondary-action" onClick={leave}>Cancelar</button>
       </section>}
 
@@ -222,6 +286,8 @@ export default function App() {
         <div className="room-identity">
           <div className="room-id-info"><LockKeyhole size={17}/><div><small>CONVITE PRIVADO</small><strong>{formatRoomCode(room.code)}</strong></div></div>
           <button onClick={() => void copyCode()} className="copy-code">{copied ? <Check size={17}/> : <Copy size={17}/>} {copied ? 'Copiado' : 'Copiar código'}</button>
+          <button onClick={() => void copyCode(true)} className="copy-code"><Copy size={16}/> Convite WhatsApp</button>
+          <button onClick={pinInvite} className="copy-code" title="Salvar convite somente neste computador"><Bookmark size={16}/> Salvar</button>
           <button className="leave-btn" onClick={leave}>Sair da sala <X size={16}/></button>
         </div>
         <div className="p2p-room-scroll">
@@ -230,6 +296,21 @@ export default function App() {
             <div className="media-buttons">
               <button className={'media-btn ' + (room.microphone ? 'is-active' : '')} onClick={() => void toggleMicrophone()} disabled={busyMedia}>{room.microphone ? <Mic size={18}/> : <MicOff size={18}/>}{room.microphone ? 'Desligar microfone' : 'Ativar microfone'}</button>
               <button className={'media-btn ' + (room.screen ? 'is-active' : '')} onClick={() => void toggleDisplay()} disabled={busyMedia}>{room.screen ? <VideoOff size={18}/> : <MonitorUp size={18}/>}{room.screen ? 'Parar transmissão' : 'Compartilhar tela'}</button>
+              <button className={'media-btn ' + (deafened ? 'is-active' : '')} onClick={() => setDeafened(value => !value)}>
+                {deafened ? <VolumeX size={18}/> : <Volume2 size={18}/>}
+                {deafened ? 'Ouvir participantes' : 'Silenciar recebimento'}
+              </button>
+            </div>
+            <div className="stream-toolbar">
+              <label htmlFor="stream-quality">Qualidade de transmissão</label>
+              <select id="stream-quality" value={room.qualityMode} onChange={e => void updateQuality(e.target.value as QualityMode)}>
+                <option value="auto">Automático — recomendado</option>
+                <option value="economy">Econômico · 480p30</option>
+                <option value="balanced">Equilibrado · 720p30</option>
+                <option value="high">Alta qualidade · 1080p30</option>
+                <option value="ultra">Máxima qualidade · 1080p60</option>
+              </select>
+              <small>Perfil solicitado: {capturePreset(room.qualityMode, room.members.length).name}</small>
             </div>
             <div className="screen-wall">
               {room.localScreen && <StreamVideo stream={room.localScreen} muted label="Sua transmissão"/>}
@@ -241,8 +322,16 @@ export default function App() {
               </div>}
             </div>
             {remoteAudio.length > 0 && <div className="audio-list">
-              {remoteAudio.map(media => <RemoteAudio key={media.id} media={media} name={nameOf(media.peerId)}/>)}
+              {remoteAudio.map(media => <RemoteAudio key={media.id} media={media} name={nameOf(media.peerId)} muted={deafened}/>)}
             </div>}
+            <div className="live-diagnostics">
+              <div><Gauge size={17}/><strong>Diagnóstico de rede</strong></div>
+              <span>Estado: <b>{room.metrics.state === 'connected' ? 'Conectado' : room.metrics.state === 'unstable' ? 'Instável' : room.metrics.state === 'connecting' ? 'Negociando' : 'Sem medição'}</b></span>
+              <span>Latência (RTT): <b>{room.metrics.rttMs === null ? 'Não disponível' : room.metrics.rttMs + ' ms'}</b></span>
+              <span>Banda de saída estimada: <b>{room.metrics.estimatedUplinkMbps === null ? 'Não disponível' : room.metrics.estimatedUplinkMbps + ' Mbps'}</b></span>
+              {room.localScreen && <span>Captura real: <b>{room.metrics.videoWidth && room.metrics.videoHeight ? room.metrics.videoWidth + ' × ' + room.metrics.videoHeight : 'Aguardando'}{room.metrics.videoFps ? ' · ' + Math.round(room.metrics.videoFps) + ' FPS' : ''}</b></span>}
+              {room.warning && <small>{room.warning}</small>}
+            </div>
             <p className="media-disclaimer">Compartilhamento em fase experimental: depende das permissões do sistema. Com 5–10 pessoas, o upload P2P pode limitar a resolução e o FPS.</p>
           </section>
 
@@ -272,8 +361,8 @@ export default function App() {
         </div>
       </>}
 
-      {(feedback || room.error || (connected && room.warning)) && <div className={'room-toast ' + (room.error || feedback ? 'toast-error' : '')} role="status">
-        <Info size={16}/><span>{room.error || feedback || room.warning}</span>
+      {(feedback || room.error) && <div className={'room-toast ' + (room.error ? 'toast-error' : '')} role="status">
+        <Info size={16}/><span>{room.error || feedback}</span>
         <button aria-label="Fechar aviso" onClick={() => { setFeedback(''); if (room.phase === 'error') leave(); }}><X size={16}/></button>
       </div>}
     </main>
@@ -290,6 +379,10 @@ export default function App() {
         <div className="metric"><span><Users size={17}/>Participantes</span><strong>{room.members.length}/10</strong></div>
         <div className="metric"><span><Headphones size={17}/>Voz P2P</span><strong>Experimental</strong></div>
         <div className="metric"><span><MonitorUp size={17}/>Transmissão</span><strong>Experimental</strong></div>
+        {connected && <>
+          <div className="metric"><span><Gauge size={17}/>RTT medido</span><strong>{room.metrics.rttMs === null ? '—' : room.metrics.rttMs + ' ms'}</strong></div>
+          <div className="metric"><span><Wifi size={17}/>Rede direta</span><strong>{room.metrics.direct === null ? 'A verificar' : room.metrics.direct ? 'Sem TURN' : 'Retransmitida'}</strong></div>
+        </>}
         {connected && <div className="right-members">
           <button onClick={() => setMembersExpanded(p => !p)}><Users size={16}/> Quem está na sala <ChevronDown size={16}/></button>
           {membersExpanded && room.members.map(m => <div className="right-member" key={m.id}><span className="dot on"/>{m.name}{m.host && ' ★'}</div>)}

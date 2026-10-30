@@ -1,54 +1,48 @@
 # AURORA LIVES
 
-**Versão de desenvolvimento 0.0.2 — salas P2P sem mensalidade**
+**Versão 0.0.3 (prévia) — Aurora Smart Connect**
 
-AURORA LIVES é um aplicativo para Windows e Linux com a identidade cristalina da marca AURORA. **Todos usam o mesmo instalador:** qualquer participante pode criar uma sala, entrar por convite, conversar, ativar o microfone ou compartilhar sua tela.
+Aplicativo desktop de comunicação para Windows e Linux com a logo cristalina AURORA. **Um único instalador para todos:** qualquer pessoa pode criar uma sala, convidar outras pessoas, conversar e tentar compartilhar voz/tela, sem contas nem servidor pago.
 
-## Como conectar dois computadores pela internet
+## Comece em 3 passos
 
-1. Instale o mesmo AURORA LIVES em cada computador.
-2. No primeiro, clique em **Criar sala** e copie o código privado de 16 caracteres.
-3. Envie o código ao outro participante por um canal de sua preferência.
-4. No segundo computador, abra **Entrar em uma sala**, informe o código e clique em **Entrar na sala**.
-5. A conexão ocorre por **WebRTC**, sem cadastro. Mensagens trafegam por um canal de dados P2P. Ambos podem tentar compartilhar microfone e tela.
+1. Todos instalam AURORA LIVES a partir das [versões de teste](https://github.com/fabriciomatosqa/AURORA-LIVES/releases).
+2. Uma pessoa clica em **Criar sala** e depois **Convite WhatsApp**. O texto copiado contém o código privado.
+3. Cada convidado clica em **Entrar em uma sala**, insere o código e confirma. O anfitrião precisa permanecer conectado.
 
-Até **10 pessoas**, contando o anfitrião. **O anfitrião precisa permanecer conectado.** Não há histórico permanente nem moderação/autenticação; **qualquer pessoa com o código pode entrar**.
+**Máximo: 10 participantes.** Não existe login nem histórico permanente.
 
-## Infraestrutura e limitações importantes
+## Novidades 0.0.3
 
-**Sem servidor pago não significa ausência absoluta de infraestrutura.**
+- **Smart Connect:** até 3 tentativas de reconexão do convidado após falha temporária; encerra com erro compreensível se não conseguir.
+- **Convites:** copiar código ou mensagem pronta para WhatsApp. O código tem 16 caracteres.
+- **Convites locais opcionais:** botão **Salvar** guarda o código apenas neste computador, com limite de 5 códigos e limpeza após 30 dias. Qualquer pessoa que tenha acesso ao perfil local poderá ler os códigos salvos.
+- **Diagnóstico:** verifica a presença das APIs WebRTC, microfone, captura de tela e Picture-in-Picture. Não garante permissões.
+- **Estatísticas:** RTT e estimativa de banda exibidos somente quando fornecidos pelo RTCPeerConnection. Não equivalem a teste de velocidade.
+- **Perfis de vídeo:** modo automático solicita 1080p60 para 1–2 pessoas, 1080p30 para 3, 720p30 para 4–6, 480p30 para 7–10. Perfis manuais disponíveis. O FPS real pode ser menor.
+- **Áudio:** opção de silenciar o recebimento dos microfones dos participantes.
+- **Picture-in-Picture:** janela flutuante de transmissão apenas quando suportada pelo webview do sistema.
 
-- O projeto utiliza o serviço público **PeerJS Cloud** (gratuito) para **sinalização**: os participantes se encontram e trocam os parâmetros para estabelecer a conexão. Não armazena mensagens ou mídia.
-- Um servidor **STUN público** ajuda a atravessar roteadores e NAT. Não há servidor TURN configurado.
-- **A comunicação ocorre diretamente entre computadores** quando a rede permite. Redes com CGNAT/NAT simétrico ou firewalls rigorosos podem impedir a conexão; nesses casos será necessário um retransmissor TURN (que gera custo) ou mudar de rede.
-- As mensagens dos convidados passam pelo computador do anfitrião, que as retransmite aos demais por canais WebRTC.
-- Áudio e compartilhamento de tela são **experimentais**, feitos diretamente em malha (um stream enviado a cada espectador). Em grupos de 5–10 pessoas isso pode exigir muito upload. **1080p60 é uma meta, não qualidade verificada**.
-- A captura de tela e áudio depende do WebView do sistema: **Windows usa WebView2; Linux usa WebKitGTK**. A compatibilidade real dessas capturas ainda precisa de testes em máquinas físicas.
-- Não existe identificação persistente de usuário, criptografia ponta a ponta com verificação de identidade, bloqueio de convidados ou transferência de arquivos.
-- Os instaladores de prévia não estão assinados.
+## Limitações importantes
 
-O backend Go anterior permanece em `services/api/` para referência e testes legados, mas **não integra o instalador e não é necessário para o P2P**.
+A arquitetura usa o **PeerJS Cloud gratuito para sinalização** e STUN público para negociar conexões WebRTC. **Não existe TURN nem SFU nesta etapa.** CGNAT, NAT simétrico e firewalls podem impedir a conexão. Não há garantia de funcionar em todas as redes sem um retransmissor.
 
-## Testes e desenvolvimento
+Em P2P malha, o transmissor envia um fluxo para cada espectador. Com grupos grandes, o upload pode ser elevado; a qualidade automática é apenas uma sugestão de captura, não adaptação individual por espectador.
 
-Requisitos: Node.js 22+, npm e pré-requisitos do [Tauri 2](https://v2.tauri.app/start/prerequisites/).
+**Os testes CI e simulações automatizadas não comprovam o funcionamento real entre duas redes nem a captura de áudio/tela em Windows e Linux.** Esses recursos permanecem experimentais e devem ser validados em computadores físicos. WebView2 e WebKitGTK podem se comportar de forma diferente.
+
+Os convites são secretos temporários: quem souber o código pode entrar. Não compartilhe publicamente. A identidade não é autenticada. O transporte WebRTC é criptografado, mas não verifica a identidade do usuário. Instaladores não assinados.
+
+## Desenvolvimento
 
 ```bash
 cd apps/desktop
 npm install
 npm run test
 npm run build
-npm run dev
-# janela nativa
 npm run dev:native
-# gerar instalador local
+# gerar instalador
 npm run package:desktop
 ```
 
-Os workflows do GitHub compilam frontend e desktop para Windows e Linux. A compilação não substitui o teste real de conexões P2P entre diferentes redes.
-
-## Segurança
-
-O convite é um segredo temporário gerado aleatoriamente. **Não o publique.** Fechar a janela do anfitrião encerra a sala e as mensagens não são guardadas. O serviço gratuito de sinalização é mantido por terceiros e pode ficar indisponível ou limitar tráfego; não deve ser assumido como infraestrutura garantida para o público em geral.
-
-Consulte [docs/architecture.md](docs/architecture.md) para arquitetura e limitações, e as Issues do GitHub para evolução.
+Consulte [docs/architecture.md](docs/architecture.md) e as Issues do projeto.

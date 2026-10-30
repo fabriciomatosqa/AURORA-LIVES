@@ -83,14 +83,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view v0.0.2-preview >/dev/null 2>&1; then
+          if gh release view v0.0.3-preview >/dev/null 2>&1; then
             echo "A prévia já existe; evitando alterar instaladores publicados."
             exit 0
           fi
-          gh release create v0.0.2-preview \
+          gh release create v0.0.3-preview \
             --target "$GITHUB_SHA" \
-            --title "AURORA LIVES 0.0.2 — Conexão P2P" \
-            --notes "Prévia P2P sem cadastro e sem servidor pago. Um único aplicativo para anfitrião e convidado. Convite com código privado de 16 caracteres. Chat direto por WebRTC e microfone/tela experimentais. A sinalização depende do PeerJS Cloud gratuito; em NAT restritivo pode falhar sem TURN. Não existe histórico permanente. Pacotes não assinados." \
+            --title "AURORA LIVES 0.0.3 — Smart Connect" \
+            --notes "Smart Connect P2P: reconexão limitada, convites prontos para WhatsApp, convites locais opcionais, diagnóstico de rede, qualidade automática por participantes, silenciamento do recebimento de áudio e vídeo flutuante quando suportado. Mesmo aplicativo para todos, com sinalização gratuita PeerJS Cloud. Sem servidor dedicado nem TURN. Voz/tela experimentais, 1080p60 não garantido, pacotes não assinados." \
             --prerelease \
             release/AURORA-LIVES-Windows-x64-Setup.exe \
             release/AURORA-LIVES-Linux-amd64.deb \

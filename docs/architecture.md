@@ -39,3 +39,15 @@ O PeerJS Cloud ajuda a descobrir usuários **mas não retransmite mídia**. STUN
 WebView2 no Windows e WebKitGTK no Linux têm comportamentos diferentes de `getUserMedia`, `getDisplayMedia`, aceleração de vídeo e reprodução automática. Os builds são testados em CI; o teste real P2P/microfone/tela entre PCs requer máquinas com hardware e permissões reais.
 
 Para larga escala ou distribuição pública, substituir o sinalizador público por serviço próprio e avaliar SFU/TURN conforme capacidade e custos. Não declarar que WebRTC elimina necessidade de infraestrutura em todos os casos.
+
+## Smart Connect 0.0.3
+
+- **Sem servidor dedicado:** PeerJS Cloud apenas sinaliza; mídia e mensagens são WebRTC entre computadores.
+- **Reconexão:** convidado repete até três tentativas com atraso crescente curto, no mesmo código. Não reestabelece conexão em redes que bloqueiam P2P.
+- **Métricas:** RTCPeerConnection.getStats() do canal de dados com anfitrião ou primeiro convidado. RTT e banda estimada descrevem somente essa conexão.
+- **Perfis de captura:** automaticamente 1080p60 para até 2 participantes; 1080p30 com 3; 720p30 entre 4 e 6; 480p30 entre 7 e 10. A chamada applyConstraints ajusta a trilha local se disponível, mas não controla bitrate por espectador.
+- **Convites locais:** até 5 códigos salvos voluntariamente no localStorage por até 30 dias, sem criptografia adicional. Não são sincronizados nem garantem que a sala esteja online.
+- **Áudio e tela:** dependentes do WebView do sistema. A captura tenta áudio do sistema, repetindo sem áudio apenas quando o navegador responde NotSupportedError ou TypeError, nunca ao negar permissão.
+- **Privacidade:** métricas e convites não são enviados ao desenvolvedor.
+
+**CI não substitui testes de rede real.** TURN será necessário para obter maior compatibilidade em redes restritivas, mas não está configurado neste projeto.
