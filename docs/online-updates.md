@@ -56,3 +56,6 @@ Implementado exclusivamente no repositório AURORA LIVES, após consulta **somen
 **Segurança:** SHA-256 protege a integridade do arquivo baixado mas não substitui assinatura independente. Tanto o AutoFill atual como esta distribuição do LIVES são **não assinados** e podem sofrer bloqueio por Smart App Control, mesmo quando o download é feito dentro do app. Não recomende desativar proteção do sistema.
 
 Esta implementação não utiliza a Microsoft Store, certificados pagos, servidor dedicado ou qualquer modificação no repositório AutoFill.
+
+
+**Transição NSIS → Inno Setup:** a versão 0.0.5 ainda abre o instalador no modo interativo. Ao atualizar da 0.0.5 para a 0.0.6, conclua o assistente Inno Setup manualmente. A partir da 0.0.6, o comando automático do Inno Setup é usado com confirmação prévia no aplicativo. Uma versão antiga instalada por NSIS pode continuar aparecendo separadamente em Aplicativos instalados.

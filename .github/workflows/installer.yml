@@ -110,7 +110,7 @@ jobs:
           test -n "$linux"
           cp "$win" release/AURORA-LIVES-Windows-x64-Setup.exe
           cp "$linux" release/AURORA-LIVES-Linux-amd64.deb
-          (cd release && sha256sum *.exe *.deb > SHA256SUMS.txt)
+          (cd release && sha256sum *.exe *.deb > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
       - name: Publicar a versão prévia
         env:
           GH_TOKEN: ${{ github.token }}
@@ -122,11 +122,15 @@ jobs:
             echo "A prévia $TAG já existe; evitando alterar instaladores publicados."
             exit 0
           fi
+          # Publish as draft only after both installers have passed the build.
+          # Release becomes visible only when all three assets are attached.
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \
-            --title "AURORA LIVES $VERSION — Prévia" \
-            --generate-notes \
-            --prerelease \
+            --title "AURORA LIVES $VERSION — Atualização via GitHub" \
+            --notes "Instaladores Windows Inno Setup e Linux DEB. Atualização diretamente pelo AURORA LIVES, sem Microsoft Store. Os arquivos são verificados com SHA-256. Os instaladores Windows continuam sem assinatura digital e podem ser bloqueados pelo Smart App Control." \
+            --draft --prerelease --latest=false \
             release/AURORA-LIVES-Windows-x64-Setup.exe \
             release/AURORA-LIVES-Linux-amd64.deb \
             release/SHA256SUMS.txt
+          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 3
+          gh release edit "$TAG" --draft=false --prerelease --latest=false
