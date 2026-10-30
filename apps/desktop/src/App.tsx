@@ -104,7 +104,7 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 1320);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [membersExpanded, setMembersExpanded] = useState(true);
   const [deafened, setDeafened] = useState(false);
@@ -272,18 +272,18 @@ export default function App() {
   return <div className="aurora-app">
     <div className="environment-glow" aria-hidden="true"/>
     <nav className="workspace-rail" aria-label="Navegação principal">
-      <button className="rail-brand" onClick={() => { if (!connected && !joining) setFeedback(''); }} title="AURORA LIVES" aria-label="AURORA LIVES — início">
+      <button className="rail-brand" onClick={() => { setSidebarOpen(value => !value); setInspectorOpen(false); }} title="Mostrar ou ocultar canais" aria-label="AURORA LIVES — início">
         <Crystal size={48}/>
       </button>
       <div className="rail-divider" aria-hidden="true"/>
-      <button className="rail-control is-active" title="Sala inicial" aria-label="Sala inicial" aria-current="page">
+      <div className="rail-control is-active" title="Sala inicial" aria-label="Sala inicial" aria-current="page">
         <Home size={21} strokeWidth={2}/>
-      </button>
+      </div>
       <button className="rail-control" disabled title="Comunidades públicas em desenvolvimento" aria-label="Comunidades em desenvolvimento">
         <Users size={20}/>
       </button>
       <span className="rail-spacer"/>
-      <button className="rail-control" title="Central de informações" aria-label="Central de informações" onClick={() => setInspectorOpen(value => !value)}>
+      <button className="rail-control" title="Central de informações" aria-label="Central de informações" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}>
         <CircleHelp size={21}/>
       </button>
       <button className="rail-control" title="Abrir configurações" aria-label="Abrir configurações" onClick={() => setSettingsOpen(true)}>
@@ -338,7 +338,7 @@ export default function App() {
 
     <main className="workspace-main" id="principal">
       <header className="topbar">
-        <button className="topbar-menu icon-control" onClick={() => setSidebarOpen(value => !value)} aria-label="Mostrar canais" aria-expanded={sidebarOpen}><Menu size={21}/></button>
+        <button className="topbar-menu icon-control" onClick={() => { setSidebarOpen(value => !value); setInspectorOpen(false); }} aria-label="Mostrar canais" aria-expanded={sidebarOpen}><Menu size={21}/></button>
         <span className="topbar-page-icon"><Hash size={21}/></span>
         <div className="topbar-page"><strong>{connected ? 'Encontro privado' : joining ? 'Conectando sua sala' : 'Visão geral'}</strong>
           <small>{connected ? 'Sua comunidade, do seu jeito' : 'Um lugar para se encontrar'}</small></div>
@@ -347,7 +347,7 @@ export default function App() {
           <span className="status-indicator"/>
           {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.4'}
         </span>
-        <button className="topbar-more icon-control" onClick={() => setInspectorOpen(value => !value)}
+        <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
       </header>
 
@@ -587,6 +587,7 @@ export default function App() {
       </div>}
     </main>
 
+    {inspectorOpen && <button type="button" className="inspector-scrim" aria-label="Fechar informações" onClick={() => setInspectorOpen(false)}/>}
     <aside className={'inspector-panel ' + (inspectorOpen ? 'inspector-visible' : '')} aria-label="Painel Aurora">
       <header className="inspector-header"><span className="inspector-header-icon"><Activity size={18}/></span>
         <strong>Central Aurora</strong><button className="inspector-close icon-control" onClick={() => setInspectorOpen(false)} aria-label="Fechar informações"><X size={18}/></button></header>
