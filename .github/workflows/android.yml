@@ -32,11 +32,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
-      - uses: android-actions/setup-android@v3
       - name: Instalar Android SDK e NDK
         shell: bash
         run: |
           set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          command -v sdkmanager || "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager --install 'platforms;android-36' 'platforms;android-35' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'platform-tools'
           echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"

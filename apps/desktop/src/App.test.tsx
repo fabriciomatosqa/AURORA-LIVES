@@ -27,6 +27,6 @@ describe('nova interface AURORA LIVES', () => {
     const html = renderToStaticMarkup(<App />);
     expect(html).toContain('Comunidades públicas em desenvolvimento');
     expect(html).toContain('disabled=""');
-    expect(html).toContain('Diagnóstico do computador');
+    expect(html).toContain('Diagnóstico do dispositivo');
   });
 });
