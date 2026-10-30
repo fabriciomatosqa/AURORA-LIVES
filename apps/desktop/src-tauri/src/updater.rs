@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs::File,
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
     process::Command,
     sync::{
@@ -36,7 +36,7 @@ struct Release {
     tag_name: String,
     draft: bool,
     #[serde(default)]
-    body: String,
+    body: Option<String>,
     published_at: Option<String>,
     assets: Vec<ReleaseAsset>,
 }
@@ -183,7 +183,7 @@ pub async fn check_for_updates(app: AppHandle) -> Result<CheckResult, String> {
         tag: release.tag_name.clone(),
         version: parse_tag(&release.tag_name).expect("already filtered").to_string(),
         // Rendered as plain text in React; never inserted as HTML.
-        notes: release.body.chars().take(700).collect(),
+        notes: release.body.as_deref().unwrap_or("").chars().take(700).collect(),
         published_at: release.published_at.clone(),
         size_bytes: asset_for(release, installer_name()).expect("already filtered").size,
     });
@@ -398,7 +398,7 @@ mod tests {
         }
     }
     fn release(tag: &str, draft: bool) -> Release {
-        Release { tag_name: tag.into(), draft, body: String::new(),
+        Release { tag_name: tag.into(), draft, body: None,
             published_at: None,
             assets: vec![asset(installer_name(), tag, 100), asset(CHECKSUM_FILE, tag, 85)]
         }
