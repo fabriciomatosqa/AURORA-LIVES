@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getVersion } from '@tauri-apps/api/app';
 
 export type UpdateInfo = {
   tag: string;
@@ -77,6 +78,15 @@ export function useOnlineUpdater() {
       running.current = false;
     }
   }, [supported, setStep]);
+
+  useEffect(() => {
+    if (!supported) return;
+    let active = true;
+    void getVersion().then(version => {
+      if (active) setCurrentVersion(version);
+    }).catch(() => { /* Fallback to release check */ });
+    return () => { active = false; };
+  }, [supported]);
 
   useEffect(() => {
     if (!supported) return;
