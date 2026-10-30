@@ -1,108 +1,191 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  Activity, ArrowRight, Bookmark, Check, ChevronDown, Copy, Gauge, Hash,
-  Headphones, Home, Info, Link2, LockKeyhole, MessageCircle, Mic, MicOff,
-  MonitorUp, Moon, PictureInPicture2, Plus, RadioTower, Send, Settings, ShieldCheck,
-  Sparkles, Sun, Trash2, Users, VideoOff, Volume2, VolumeX, Wifi, X,
+  Activity, ArrowRight, Bookmark, Check, ChevronDown, CircleHelp, Copy,
+  Gauge, Hash, Headphones, Home, Info, Link2, LockKeyhole, Menu,
+  MessageCircle, Mic, MicOff, MonitorUp, Moon, PictureInPicture2, Plus,
+  RadioTower, Send, Settings2, ShieldCheck, Sparkles, Sun, Trash2,
+  Users, VideoOff, Volume2, VolumeX, Wifi, X,
 } from 'lucide-react';
 import { RoomSession, emptyRoom, type RemoteMedia, type RoomSnapshot } from './p2p/session';
 import { cleanName, formatRoomCode, normalizeRoomCode } from './p2p/protocol';
 import { capabilities, capturePreset, type QualityMode } from './p2p/quality';
 import { inviteMessage, readSavedInvites, saveInvite, SAVED_INVITES_KEY, type SavedInvite } from './p2p/invites';
-import './p2p.css';
+
+type Theme = 'dark' | 'light' | 'system';
 
 function fromStorage(key: string, fallback: string): string {
   try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
 }
-function Crystal({ size = 42 }: { size?: number }) {
-  return <img className="crystal" src="/aurora-mark.webp" alt="Emblema cristalino AURORA" width={size} height={size} />;
+
+function Crystal({ size = 42, className = '' }: { size?: number; className?: string }) {
+  return <img
+    className={'crystal ' + className}
+    src="/aurora-mark.webp"
+    width={size}
+    height={size}
+    alt="Emblema cristalino original da AURORA"
+    draggable={false}
+  />;
 }
-function StreamVideo({ stream, muted, label }: { stream: MediaStream; muted: boolean; label: string }) {
-  const [pipError, setPipError] = useState('');
-  const element = useRef<HTMLVideoElement>(null);
+
+function Avatar({ name, own = false, size = 'normal' }: { name: string; own?: boolean; size?: 'normal' | 'small' }) {
+  return <span className={'person-avatar ' + (own ? 'is-own ' : '') + (size === 'small' ? 'avatar-small' : '')} aria-hidden="true">
+    {name.trim().slice(0, 1).toLocaleUpperCase('pt-BR') || '?'}
+  </span>;
+}
+
+function MediaPlayer({ stream, muted, label }: { stream: MediaStream; muted: boolean; label: string }) {
+  const video = useRef<HTMLVideoElement>(null);
+  const [error, setError] = useState('');
   useEffect(() => {
-    if (!element.current) return;
-    element.current.srcObject = stream;
-    void element.current.play().catch(() => { /* user can press Play */ });
-    return () => { if (element.current) element.current.srcObject = null; };
+    const node = video.current;
+    if (!node) return;
+    node.srcObject = stream;
+    void node.play().catch(() => { /* A reprodução pode depender de interação */ });
+    return () => { node.srcObject = null; };
   }, [stream]);
-  async function pictureInPicture() {
-    if (!element.current || !document.pictureInPictureEnabled || !element.current.requestPictureInPicture) return;
+
+  async function floatVideo() {
+    const node = video.current;
+    if (!node?.requestPictureInPicture || !document.pictureInPictureEnabled) return;
     try {
-      setPipError('');
-      await element.current.requestPictureInPicture();
+      setError('');
+      await node.requestPictureInPicture();
     } catch {
-      setPipError('Janela flutuante indisponível neste sistema.');
+      setError('Janela flutuante indisponível neste dispositivo.');
     }
   }
-  return <div className="video-card">
-    <video ref={element} autoPlay playsInline muted={muted} controls aria-label={label}/>
-    <span className="video-label"><MonitorUp size={14}/> {label}</span>
-    {typeof document !== 'undefined' && document.pictureInPictureEnabled && <button type="button"
-      className="video-pip" title="Abrir em janela flutuante" onClick={() => void pictureInPicture()}>
-      <PictureInPicture2 size={17}/> Flutuante
+
+  return <div className="stream-tile">
+    <video ref={video} autoPlay playsInline muted={muted} controls aria-label={label} />
+    <span className="stream-title"><span className="stream-title-icon"><MonitorUp size={14}/></span>{label}</span>
+    {typeof document !== 'undefined' && document.pictureInPictureEnabled && <button
+      type="button" className="float-video icon-control" onClick={() => void floatVideo()}
+      aria-label={'Exibir ' + label + ' em janela flutuante'} title="Janela flutuante">
+      <PictureInPicture2 size={17}/>
     </button>}
-    {pipError && <span className="pip-error">{pipError}</span>}
+    {error && <span className="stream-error" role="status">{error}</span>}
   </div>;
 }
-function RemoteAudio({ media, name, muted }: { media: RemoteMedia; name: string; muted: boolean }) {
-  const element = useRef<HTMLAudioElement>(null);
+
+function AudioListener({ media, name, muted }: { media: RemoteMedia; name: string; muted: boolean }) {
+  const audio = useRef<HTMLAudioElement>(null);
   useEffect(() => {
-    if (!element.current) return;
-    element.current.srcObject = media.stream;
-    void element.current.play().catch(() => { /* controls allow user start */ });
-    return () => { if (element.current) element.current.srcObject = null; };
+    const node = audio.current;
+    if (!node) return;
+    node.srcObject = media.stream;
+    void node.play().catch(() => { /* Os controles permanecem disponíveis */ });
+    return () => { node.srcObject = null; };
   }, [media.stream]);
-  return <div className="audio-card">
-    <span className="audio-avatar">{name.slice(0, 1).toUpperCase()}</span>
-    <div><strong>{name}</strong><small>Áudio recebido</small></div>
-    <audio autoPlay controls muted={muted} ref={element} aria-label={'Áudio de ' + name}/>
+
+  return <div className="audio-listener">
+    <Avatar name={name} size="small"/>
+    <div className="audio-description"><strong>{name}</strong><span>Microfone conectado</span></div>
+    <audio ref={audio} autoPlay controls muted={muted} aria-label={'Áudio de ' + name}/>
   </div>;
 }
+
+function MiniMetric({ icon, label, value, accent = false }: {
+  icon: ReactNode; label: string; value: string; accent?: boolean;
+}) {
+  return <div className="mini-metric">
+    <span className="mini-metric-symbol">{icon}</span>
+    <span>{label}</span>
+    <strong className={accent ? 'metric-accent' : ''}>{value}</strong>
+  </div>;
+}
+
 export default function App() {
   const [room, setRoom] = useState<RoomSnapshot>(emptyRoom);
   const [nickname, setNickname] = useState(() => fromStorage('aurora.nickname', 'Visitante'));
   const [invite, setInvite] = useState('');
-  const [text, setText] = useState('');
+  const [message, setMessage] = useState('');
   const [feedback, setFeedback] = useState('');
   const [copied, setCopied] = useState(false);
-  const [settings, setSettings] = useState(false);
-  const [theme, setTheme] = useState(() => fromStorage('aurora.theme', 'dark'));
-  const [busyMedia, setBusyMedia] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 1320);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [membersExpanded, setMembersExpanded] = useState(true);
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [deafened, setDeafened] = useState(false);
+  const [busyMedia, setBusyMedia] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => {
+    const stored = fromStorage('aurora.theme', 'dark');
+    return stored === 'light' || stored === 'system' ? stored : 'dark';
+  });
   const [savedInvites, setSavedInvites] = useState<SavedInvite[]>(() =>
     readSavedInvites(fromStorage(SAVED_INVITES_KEY, '')));
   const [qualityPreference, setQualityPreference] = useState<QualityMode>(() => {
     const value = fromStorage('aurora.quality', 'auto');
     return ['auto', 'economy', 'balanced', 'high', 'ultra'].includes(value) ? value as QualityMode : 'auto';
   });
-  const support = useMemo(capabilities, []);
+
   const session = useRef<RoomSession | null>(null);
-  const bottom = useRef<HTMLDivElement>(null);
+  const messageList = useRef<HTMLDivElement>(null);
+  const support = useMemo(capabilities, []);
   const connected = room.phase === 'connected';
-  const host = room.role === 'host';
-  const remoteVideo = room.remoteMedia.filter(m => m.kind === 'screen');
-  const remoteAudio = room.remoteMedia.filter(m => m.kind === 'microphone');
+  const joining = room.phase === 'connecting' || room.phase === 'reconnecting';
+  const isHost = room.role === 'host';
+  const liveStreams = room.remoteMedia.filter(item => item.kind === 'screen');
+  const microphoneStreams = room.remoteMedia.filter(item => item.kind === 'microphone');
+  const broadcasting = room.screen || liveStreams.length > 0;
+  const memberCount = room.members.length;
+  const selectedProfile = capturePreset(room.qualityMode, memberCount);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('aurora.theme', theme); } catch { /* no storage */ }
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    function applyTheme() {
+      document.documentElement.dataset.theme = theme === 'system' ? (media.matches ? 'dark' : 'light') : theme;
+    }
+    applyTheme();
+    media.addEventListener?.('change', applyTheme);
+    try { localStorage.setItem('aurora.theme', theme); } catch { /* armazenamento não disponível */ }
+    return () => media.removeEventListener?.('change', applyTheme);
   }, [theme]);
-  useEffect(() => () => session.current?.stop(), []);
-  useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }); }, [room.messages]);
 
-  function openRoom(mode: 'host' | 'guest', fromSaved?: string) {
-    if (typeof window.RTCPeerConnection === 'undefined') {
-      setFeedback('Este sistema não disponibiliza WebRTC. Tente outro ambiente.');
+  useEffect(() => {
+    function adjustPanels() {
+      // Narrow windows use drawers: don't leave desktop inspector as a
+      // blocking overlay after resizing the application.
+      if (window.innerWidth <= 1320) setInspectorOpen(false);
+      if (window.innerWidth > 740) setSidebarOpen(false);
+    }
+    window.addEventListener('resize', adjustPanels);
+    return () => window.removeEventListener('resize', adjustPanels);
+  }, []);
+
+  useEffect(() => () => session.current?.stop(), []);
+
+  useEffect(() => {
+    if (connected && messageList.current) {
+      messageList.current.scrollTop = messageList.current.scrollHeight;
+    }
+  }, [connected, room.messages]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    function closeWithEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setSettingsOpen(false);
+    }
+    window.addEventListener('keydown', closeWithEscape);
+    return () => window.removeEventListener('keydown', closeWithEscape);
+  }, [settingsOpen]);
+
+  function openRoom(mode: 'host' | 'guest', storedCode?: string) {
+    setSidebarOpen(false);
+    setInspectorOpen(false);
+    if (!support.webRTC) {
+      setFeedback('Este ambiente não oferece WebRTC. Veja o diagnóstico de compatibilidade.');
       return;
     }
+    const code = mode === 'host' ? RoomSession.newCode() : normalizeRoomCode(storedCode || invite);
+    if (!code) {
+      setFeedback('Informe um código de convite válido com 16 caracteres.');
+      return;
+    }
+    session.current?.stop();
     setFeedback('');
     setCopied(false);
-    const code = mode === 'host' ? RoomSession.newCode() : normalizeRoomCode(fromSaved || invite);
-    if (!code) { setFeedback('Informe o código de 16 caracteres recebido do anfitrião.'); return; }
-    session.current?.stop();
     const current = new RoomSession(cleanName(nickname), next => setRoom(next));
     session.current = current;
     void current.setQuality(qualityPreference);
@@ -110,297 +193,467 @@ export default function App() {
     else current.startJoining(code);
   }
 
-  function leave() {
+  function leaveRoom() {
     session.current?.stop();
     session.current = null;
     setRoom({ ...emptyRoom });
-    setText('');
+    setMessage('');
     setFeedback('');
+    setCopied(false);
+    setInspectorOpen(false);
   }
 
-  async function copyCode(full = false) {
+  async function copyInvite(complete = false) {
     try {
-      await navigator.clipboard.writeText(full ? inviteMessage(room.code) : formatRoomCode(room.code));
+      await navigator.clipboard.writeText(complete ? inviteMessage(room.code) : formatRoomCode(room.code));
       setCopied(true);
-      setFeedback(full ? 'Convite pronto para colar no WhatsApp.' : 'Código copiado. Compartilhe apenas com pessoas de confiança.');
+      setFeedback(complete ? 'Convite pronto para enviar no WhatsApp.' : 'Código copiado com sucesso.');
     } catch {
-      setFeedback('Não foi possível copiar automaticamente. Selecione o código exibido e copie.');
+      setFeedback('Não foi possível copiar automaticamente. Selecione o código e copie.');
     }
   }
 
-  function pinInvite() {
+  function saveCurrentInvite() {
     if (!room.code) return;
-    const result = saveInvite(savedInvites, room.code, 'Sala com ' + cleanName(nickname));
-    setSavedInvites(result);
-    try { localStorage.setItem(SAVED_INVITES_KEY, JSON.stringify(result)); } catch { /* unavailable */ }
-    setFeedback('Convite salvo neste computador. Só funcionará enquanto o anfitrião estiver na sala.');
+    const saved = saveInvite(savedInvites, room.code, 'Encontro AURORA');
+    setSavedInvites(saved);
+    try { localStorage.setItem(SAVED_INVITES_KEY, JSON.stringify(saved)); } catch { /* indisponível */ }
+    setFeedback('Convite salvo somente neste computador.');
   }
 
-  function unpinInvite(code: string) {
+  function removeSavedInvite(code: string) {
     const remaining = savedInvites.filter(item => item.code !== code);
     setSavedInvites(remaining);
-    try { localStorage.setItem(SAVED_INVITES_KEY, JSON.stringify(remaining)); } catch { /* unavailable */ }
-  }
-
-  async function updateQuality(value: QualityMode) {
-    setQualityPreference(value);
-    try { localStorage.setItem('aurora.quality', value); } catch { /* unavailable */ }
-    await session.current?.setQuality(value);
+    try { localStorage.setItem(SAVED_INVITES_KEY, JSON.stringify(remaining)); } catch { /* indisponível */ }
   }
 
   function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (session.current?.send(text)) {
-      setText('');
+    if (session.current?.send(message)) {
+      setMessage('');
       setFeedback('');
-    } else if (text.trim()) setFeedback('Não foi possível enviar. Verifique a conexão P2P.');
+    } else if (message.trim()) {
+      setFeedback('Não foi possível enviar a mensagem. Verifique a conexão.');
+    }
   }
 
   async function toggleMicrophone() {
-    setBusyMedia(true); setFeedback('');
+    setBusyMedia(true);
+    setFeedback('');
     try {
       if (room.microphone) session.current?.disableMicrophone();
       else await session.current?.enableMicrophone();
-    } catch (e) {
-      setFeedback('Microfone indisponível: ' + (e instanceof Error ? e.message : 'verifique as permissões.'));
-    } finally { setBusyMedia(false); }
+    } catch (error) {
+      setFeedback('Não foi possível acessar o microfone: ' + (error instanceof Error ? error.message : 'verifique as permissões.'));
+    } finally {
+      setBusyMedia(false);
+    }
   }
 
   async function toggleDisplay() {
-    setBusyMedia(true); setFeedback('');
+    setBusyMedia(true);
+    setFeedback('');
     try {
       if (room.screen) session.current?.stopScreen();
       else await session.current?.shareScreen();
-    } catch (e) {
-      setFeedback('Não foi possível compartilhar: ' + (e instanceof Error ? e.message : 'verifique as permissões.'));
-    } finally { setBusyMedia(false); }
+    } catch (error) {
+      setFeedback('Não foi possível compartilhar a tela: ' + (error instanceof Error ? error.message : 'verifique as permissões.'));
+    } finally {
+      setBusyMedia(false);
+    }
   }
 
-  function updateNickname(value: string) {
-    setNickname(value);
-    try { localStorage.setItem('aurora.nickname', value); } catch { /* no storage */ }
+  async function updateQuality(mode: QualityMode) {
+    setQualityPreference(mode);
+    try { localStorage.setItem('aurora.quality', mode); } catch { /* indisponível */ }
+    try {
+      await session.current?.setQuality(mode);
+    } catch {
+      setFeedback('Não foi possível aplicar este perfil de vídeo.');
+    }
   }
 
-  const nameOf = (peerId: string) => room.members.find(m => m.id === peerId)?.name || 'Participante';
+  function updateNickname(name: string) {
+    setNickname(name);
+    try { localStorage.setItem('aurora.nickname', name); } catch { /* indisponível */ }
+  }
 
-  return <div className="shell p2p-shell">
-    <nav className="rail" aria-label="AURORA LIVES">
-      <button className="brand-square" title="Início" onClick={() => connected ? undefined : setFeedback('')}><Crystal size={51}/></button>
-      <span className="separator"/>
-      <button className="rail-button chosen" title="Conexões" aria-label="Conexões"><Home size={22}/></button>
-      <button className="rail-button" disabled title="Comunidades públicas em breve"><Plus size={22}/></button>
-      <div className="grow"/>
-      <button className="rail-button" onClick={() => setSettings(true)} title="Configurações"><Settings size={21}/></button>
+  const memberName = (peerId: string) => room.members.find(member => member.id === peerId)?.name || 'Participante';
+
+  return <div className="aurora-app">
+    <div className="environment-glow" aria-hidden="true"/>
+    <nav className="workspace-rail" aria-label="Navegação principal">
+      <button className="rail-brand" onClick={() => { setSidebarOpen(value => !value); setInspectorOpen(false); }} title="Mostrar ou ocultar canais" aria-label="AURORA LIVES — início">
+        <Crystal size={48}/>
+      </button>
+      <div className="rail-divider" aria-hidden="true"/>
+      <div className="rail-control is-active" title="Sala inicial" aria-label="Sala inicial" aria-current="page">
+        <Home size={21} strokeWidth={2}/>
+      </div>
+      <button className="rail-control" disabled title="Comunidades públicas em desenvolvimento" aria-label="Comunidades em desenvolvimento">
+        <Users size={20}/>
+      </button>
+      <span className="rail-spacer"/>
+      <button className="rail-control" title="Central de informações" aria-label="Central de informações" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}>
+        <CircleHelp size={21}/>
+      </button>
+      <button className="rail-control" title="Abrir configurações" aria-label="Abrir configurações" onClick={() => setSettingsOpen(true)}>
+        <Settings2 size={20}/>
+      </button>
+      <span className="rail-version">A·04</span>
     </nav>
 
-    <aside className="channels">
-      <div className="brand-row">
-        <div className="brand-tile"><Crystal size={31}/></div>
-        <div><strong>AURORA</strong><small>LIVES • Conexão direta</small></div>
-        <ChevronDown size={16}/>
+    {sidebarOpen && <button className="sidebar-scrim" type="button" aria-label="Fechar painel de canais" onClick={() => setSidebarOpen(false)}/>}
+    <aside className={'channel-sidebar ' + (sidebarOpen ? 'sidebar-visible' : '')} aria-label="Espaço e participantes">
+      <div className="sidebar-brand">
+        <span className="brand-emblem"><Crystal size={34}/></span>
+        <span className="brand-name"><strong>AURORA <span>LIVES</span></strong><small>COMUNICAÇÃO SEM LIMITES</small></span>
+        <span className="brand-glint" aria-hidden="true"/>
       </div>
-      <div className="channel-scroll">
-        <div className="section-title">MEU ESPAÇO</div>
-        <div className="channel selected"><Home size={18}/><span>{connected ? 'Encontro privado' : 'Início'}</span></div>
-        <div className="section-title section-split">CANAIS DE COMUNICAÇÃO</div>
-        <div className="channel selected"><Hash size={18}/><span>conversa-p2p</span></div>
-        <div className="channel"><RadioTower size={18}/><span>voz e transmissão</span></div>
-        <div className="section-title section-split">PARTICIPANTES <span className="coming-label">{room.members.length}/{10}</span></div>
-        {room.members.map(m => <div className="participant" key={m.id}>
-          <div className="avatar">{m.name.slice(0, 1).toUpperCase()}</div>
-          <span>{m.name}{m.id === room.localId ? ' (você)' : ''}</span>
-          {m.host && <span title="Anfitrião">★</span>}
-        </div>)}
-        {!connected && <p className="nav-help">Crie uma sala ou use um convite para conversar pela internet, sem cadastro.</p>}
+
+      <div className="sidebar-body">
+        <div className="sidebar-caption"><span>SEU ESPAÇO</span><span className="caption-bar"/></div>
+        <div className="sidebar-current"><span className="sidebar-current-icon"><Home size={17}/></span>
+          <span>{connected ? 'Encontro privado' : 'Bem-vindo ao Aurora'}</span><span className="sidebar-active-dot"/></div>
+
+        <div className="sidebar-caption with-space"><span>CANAIS</span><span className="caption-bar"/></div>
+        <div className="sidebar-channel"><Hash size={17}/><span>conversa-geral</span><span className="channel-indicator"/></div>
+        <div className="sidebar-channel"><RadioTower size={17}/><span>voz-e-transmissão</span></div>
+
+        <div className="sidebar-caption with-space"><span>NA SALA</span><span className="member-counter">{memberCount}/10</span></div>
+        <div className="sidebar-members">
+          {room.members.length ? room.members.map(member => <div className="sidebar-member" key={member.id}>
+            <Avatar name={member.name} size="small" own={member.id === room.localId}/>
+            <span>{member.name}{member.id === room.localId ? ' (você)' : ''}</span>
+            {member.host && <span className="host-crown" title="Anfitrião">★</span>}
+            <span className="online-pin" title="Conectado"/>
+          </div>) : <div className="sidebar-empty"><span className="sidebar-empty-icon"><Users size={20}/></span>
+            <p>Os participantes aparecerão aqui quando você entrar em uma sala.</p></div>}
+        </div>
       </div>
-      <div className="connection">
-        <span className={'dot ' + (connected ? 'on' : '')}/>
-        <div><strong>{connected ? 'Conexão P2P ativa' : room.phase === 'reconnecting' ? 'Reconectando...' : room.phase === 'connecting' ? 'Conectando...' : 'Sem sala ativa'}</strong><small>WebRTC • Sem servidor dedicado</small></div>
-        <Wifi size={16}/>
-      </div>
-      <div className="account">
-        <div className="avatar">{cleanName(nickname).slice(0, 1).toUpperCase()}</div>
-        <div><strong>{cleanName(nickname)}</strong><small>Sem conta • Visitante</small></div>
-        <button onClick={() => setSettings(true)} aria-label="Configurações"><Settings size={19}/></button>
+
+      <div className="sidebar-footer">
+        <div className={'sidebar-connection ' + (connected ? 'is-connected' : joining ? 'is-connecting' : '')}>
+          <span className="status-indicator"/>
+          <span><strong>{connected ? 'Conectado' : joining ? 'Estabelecendo conexão' : 'Pronto para conectar'}</strong>
+            <small>{connected ? 'WebRTC ponto a ponto' : 'Sem servidor dedicado'}</small></span>
+          <Wifi size={17} aria-hidden="true"/>
+        </div>
+        <button className="profile-card" onClick={() => setSettingsOpen(true)} title="Editar perfil e preferências">
+          <Avatar name={cleanName(nickname)} own/>
+          <span><strong>{cleanName(nickname)}</strong><small>Perfil local · Sem cadastro</small></span>
+          <Settings2 size={18}/>
+        </button>
       </div>
     </aside>
 
-    <main className="main p2p-main">
+    <main className="workspace-main" id="principal">
       <header className="topbar">
-        <Hash className="teal" size={23}/>
-        <div><strong>{connected ? 'sala-privada' : 'boas-vindas'}</strong><small>{connected ? 'Mensagens e mídia diretamente entre os participantes' : 'Crie ou entre em uma sala de comunicação'}</small></div>
-        <span className="flex-grow"/>
-        <span className="version"><span className={'dot ' + (connected ? 'on' : '')}/> PRÉVIA 0.0.3</span>
+        <button className="topbar-menu icon-control" onClick={() => { setSidebarOpen(value => !value); setInspectorOpen(false); }} aria-label="Mostrar canais" aria-expanded={sidebarOpen}><Menu size={21}/></button>
+        <span className="topbar-page-icon"><Hash size={21}/></span>
+        <div className="topbar-page"><strong>{connected ? 'Encontro privado' : joining ? 'Conectando sua sala' : 'Visão geral'}</strong>
+          <small>{connected ? 'Sua comunidade, do seu jeito' : 'Um lugar para se encontrar'}</small></div>
+        <div className="topbar-spacer"/>
+        <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
+          <span className="status-indicator"/>
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.4'}
+        </span>
+        <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
+          aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
       </header>
 
-      {(room.phase === 'idle' || room.phase === 'error') && <section className="p2p-lobby">
-        <div className="welcome-logo"><Crystal size={111}/></div>
-        <div className="eyebrow">✦ &nbsp; SUA CONEXÃO, SEU ESPAÇO</div>
-        <h1>Conexões que <em>brilham.</em></h1>
-        <p>Crie uma sala privada e compartilhe o código com seus amigos. Todos usam o mesmo AURORA LIVES — sem cadastro e sem contratar servidor.</p>
-        <div className="lobby-panels">
-          <div className="lobby-panel">
-            <div className="panel-symbol"><Sparkles size={24}/></div>
-            <h2>Criar um encontro</h2>
-            <p>Abra uma nova sala e convide até 9 pessoas. O encontro funciona enquanto você estiver conectado.</p>
-            <button className="primary-action" onClick={() => openRoom('host')}><Plus size={19}/> Criar sala <ArrowRight size={17}/></button>
+      {(room.phase === 'idle' || room.phase === 'error') && <div className="lobby-scroll">
+        <section className="lobby-main" aria-label="Bem-vindo ao AURORA LIVES">
+          <div className="hero">
+            <div className="hero-copy">
+              <span className="hero-kicker"><Sparkles size={15}/> APRESENTANDO O AURORA LIVES</span>
+              <h1>Um universo de<br/><em>boas conexões.</em></h1>
+              <p>Reúna seus amigos, converse e compartilhe momentos em um espaço que é só de vocês. Sem cadastro, sem complicação.</p>
+              <div className="hero-benefits"><span><ShieldCheck size={14}/> Sala privada</span>
+                <span><Wifi size={14}/> Conexão direta</span><span><Users size={14}/> Até 10 pessoas</span></div>
+            </div>
+            <div className="hero-art" aria-hidden="true">
+              <div className="hero-ring ring-one"/>
+              <div className="hero-ring ring-two"/>
+              <div className="hero-ring ring-three"/>
+              <div className="hero-star star-one"/>
+              <div className="hero-star star-two"/>
+              <div className="hero-star star-three"/>
+              <span className="hero-aura"/>
+              <Crystal size={180} className="hero-crystal"/>
+              <span className="art-label">STAY CONNECTED</span>
+            </div>
           </div>
-          <div className="lobby-panel">
-            <div className="panel-symbol violet"><Link2 size={24}/></div>
-            <h2>Entrar em uma sala</h2>
-            <p>Recebeu um código? Digite aqui para conectar-se diretamente ao anfitrião.</p>
-            <label htmlFor="room-invite">Código do convite</label>
-            <input id="room-invite" value={invite} maxLength={23} onChange={e => setInvite(e.target.value.toUpperCase())}
-              placeholder="ABCD-EFGH-JKLM-NPQR" autoComplete="off" spellCheck={false}/>
-            <button className="secondary-action" onClick={() => openRoom('guest')} disabled={!normalizeRoomCode(invite)}>Entrar na sala <ArrowRight size={17}/></button>
-          </div>
-        </div>
-        {savedInvites.length > 0 && <section className="saved-invites" aria-label="Convites salvos neste computador">
-          <div className="saved-heading"><Bookmark size={17}/> Convites salvos neste computador</div>
-          {savedInvites.map(item => <div className="saved-entry" key={item.code}>
-            <span>{item.label}<small>{formatRoomCode(item.code)}</small></span>
-            <button className="secondary-action" onClick={() => openRoom('guest', item.code)}>Entrar</button>
-            <button aria-label={'Excluir convite ' + item.label} onClick={() => unpinInvite(item.code)}><Trash2 size={16}/></button>
-          </div>)}
-          <small>Estes códigos são privados e só funcionam enquanto o anfitrião estiver conectado.</small>
-        </section>}
-        <p className="connection-note"><ShieldCheck size={16}/> Dados por WebRTC. O serviço gratuito PeerJS apenas apresenta os usuários; conexões restritivas podem precisar de TURN.</p>
-        <button className="diagnostics-trigger" onClick={() => setShowDiagnostics(value => !value)}><Gauge size={16}/> {showDiagnostics ? 'Ocultar diagnóstico' : 'Verificar compatibilidade do computador'}</button>
-        {showDiagnostics && <div className="capability-list">
-          <div><span>WebRTC</span><strong>{support.webRTC ? 'Disponível' : 'Indisponível'}</strong></div>
-          <div><span>API do microfone</span><strong>{support.microphoneApi ? 'Disponível' : 'Indisponível'}</strong></div>
-          <div><span>API de captura de tela</span><strong>{support.screenApi ? 'Disponível' : 'Indisponível'}</strong></div>
-          <div><span>Vídeo flutuante (PiP)</span><strong>{support.pictureInPicture ? 'Disponível' : 'Indisponível'}</strong></div>
-          <small>Este diagnóstico identifica recursos da plataforma, mas não comprova permissões ou conexão entre redes.</small>
-        </div>}
-      </section>}
 
-      {(room.phase === 'connecting' || room.phase === 'reconnecting') && <section className="p2p-wait">
-        <div className="loading-orb"><Crystal size={92}/></div>
-        <h2>{room.phase === 'reconnecting' ? 'Restabelecendo a conexão...' : host ? 'Preparando seu encontro...' : 'Procurando a sala...'}</h2>
-        <p>{room.phase === 'reconnecting' ? 'Tentativa ' + room.reconnectAttempts + ' de 3. Verifique se o anfitrião continua online.' : 'Conectando ao serviço gratuito de sinalização e negociando o canal direto.'}</p>
-        <button className="secondary-action" onClick={leave}>Cancelar</button>
+          <div className="lobby-section-heading"><div><span className="section-overline">COMECE POR AQUI</span><h2>Como vamos nos conectar?</h2></div><span className="small-muted">Escolha uma opção abaixo</span></div>
+
+          <div className="lobby-actions">
+            <section className="action-card action-create">
+              <div className="action-card-top"><span className="action-illustration"><Plus size={27}/></span><span className="action-index">01 / CRIAR</span></div>
+              <h3>Crie sua sala</h3>
+              <p>Abra um espaço privado e compartilhe o código com quem você quiser chamar.</p>
+              <button className="action-primary" onClick={() => openRoom('host')} type="button">
+                Criar sala agora <ArrowRight size={18}/>
+              </button>
+              <span className="action-footnote"><LockKeyhole size={13}/> O convite é exclusivo da sua sala</span>
+            </section>
+            <section className="action-card action-join">
+              <div className="action-card-top"><span className="action-illustration"><Link2 size={25}/></span><span className="action-index">02 / ENTRAR</span></div>
+              <h3>Entre com um convite</h3>
+              <p>Alguém já criou a sala? Insira o código enviado pelo anfitrião.</p>
+              <label className="sr-only" htmlFor="invite-code">Código de 16 caracteres da sala</label>
+              <div className="invite-field"><Hash size={17}/><input id="invite-code" autoComplete="off" spellCheck={false}
+                placeholder="ABCD-EFGH-JKLM-NPQR" value={invite} maxLength={23}
+                onChange={event => setInvite(event.target.value.toUpperCase())}/></div>
+              <button className="action-secondary" onClick={() => openRoom('guest')} disabled={!normalizeRoomCode(invite)}>
+                Entrar na sala <ArrowRight size={17}/>
+              </button>
+            </section>
+          </div>
+
+          {savedInvites.length > 0 && <section className="saved-rooms" aria-label="Convites guardados">
+            <div className="saved-rooms-heading"><Bookmark size={17}/><strong>Convites salvos</strong><span>Somente neste computador</span></div>
+            <div className="saved-rooms-list">
+              {savedInvites.map(item => <div className="saved-room" key={item.code}>
+                <span className="saved-room-icon"><Hash size={18}/></span>
+                <span className="saved-room-title"><strong>{item.label}</strong><small>{formatRoomCode(item.code)}</small></span>
+                <button onClick={() => openRoom('guest', item.code)} className="saved-enter">Entrar <ArrowRight size={15}/></button>
+                <button className="saved-delete icon-control" onClick={() => removeSavedInvite(item.code)}
+                  aria-label={'Excluir convite ' + item.label} title="Remover convite salvo"><Trash2 size={16}/></button>
+              </div>)}
+            </div>
+            <p>Esses códigos só funcionam enquanto o anfitrião estiver conectado.</p>
+          </section>}
+
+          <div className="lobby-bottom">
+            <div className="privacy-note"><span className="privacy-icon"><ShieldCheck size={17}/></span>
+              <span><strong>Seu espaço continua sendo seu.</strong><small>Sem contas, sem histórico permanente. A comunicação usa WebRTC quando a rede permite.</small></span></div>
+            <button className="text-action" onClick={() => setDiagnosticsOpen(value => !value)}
+              aria-expanded={diagnosticsOpen}><Gauge size={16}/>{diagnosticsOpen ? 'Ocultar diagnóstico' : 'Diagnóstico do computador'}<ChevronDown size={16}/></button>
+          </div>
+
+          {diagnosticsOpen && <section className="compatibility-card">
+            <div className="compatibility-heading"><Gauge size={19}/><strong>Compatibilidade do dispositivo</strong><span>Verificação local</span></div>
+            <div className="compatibility-grid">
+              {[
+                { title: 'Conexões WebRTC', ok: support.webRTC },
+                { title: 'Microfone', ok: support.microphoneApi },
+                { title: 'Compartilhamento de tela', ok: support.screenApi },
+                { title: 'Janela flutuante', ok: support.pictureInPicture },
+              ].map(entry => <div className="compatibility-item" key={entry.title}><span>{entry.title}</span><strong className={entry.ok ? 'available' : 'not-available'}>
+                {entry.ok ? <Check size={14}/> : <X size={14}/>} {entry.ok ? 'Disponível' : 'Indisponível'}
+              </strong></div>)}
+            </div>
+            <p>Essa verificação indica a presença de recursos, não garante permissões ou uma conexão bem-sucedida.</p>
+          </section>}
+        </section>
+      </div>}
+
+      {joining && <section className="connection-wait" aria-live="polite">
+        <div className="wait-art"><span className="wait-ripple ripple-one"/><span className="wait-ripple ripple-two"/><Crystal size={108}/></div>
+        <span className="section-overline">AURORA SMART CONNECT</span>
+        <h2>{room.phase === 'reconnecting' ? 'Restabelecendo a conexão...' : isHost ? 'Criando seu espaço...' : 'Entrando na sala...'}</h2>
+        <p>{room.phase === 'reconnecting'
+          ? 'Tentativa ' + room.reconnectAttempts + ' de 3. Confira se o anfitrião continua online.'
+          : 'Estabelecendo uma conexão WebRTC segura com os participantes.'}</p>
+        <div className="wait-progress" aria-hidden="true"><span/></div>
+        <button className="quiet-button" onClick={leaveRoom}>Cancelar</button>
       </section>}
 
       {connected && <>
-        <div className="room-identity">
-          <div className="room-id-info"><LockKeyhole size={17}/><div><small>CONVITE PRIVADO</small><strong>{formatRoomCode(room.code)}</strong></div></div>
-          <button onClick={() => void copyCode()} className="copy-code">{copied ? <Check size={17}/> : <Copy size={17}/>} {copied ? 'Copiado' : 'Copiar código'}</button>
-          <button onClick={() => void copyCode(true)} className="copy-code"><Copy size={16}/> Convite WhatsApp</button>
-          <button onClick={pinInvite} className="copy-code" title="Salvar convite somente neste computador"><Bookmark size={16}/> Salvar</button>
-          <button className="leave-btn" onClick={leave}>Sair da sala <X size={16}/></button>
+        <div className="room-toolbar">
+          <div className="room-invite">
+            <span className="invite-lock"><LockKeyhole size={19}/></span>
+            <div><span className="invite-caption">CÓDIGO DA SUA SALA</span><strong title="Selecione para copiar" className="invite-code">{formatRoomCode(room.code)}</strong></div>
+          </div>
+          <div className="room-invite-actions">
+            <button onClick={() => void copyInvite(false)} className="toolbar-button" title="Copiar código">
+              {copied ? <Check size={16}/> : <Copy size={16}/>} <span>{copied ? 'Copiado' : 'Copiar'}</span></button>
+            <button onClick={() => void copyInvite(true)} className="toolbar-button toolbar-share"><Link2 size={16}/> <span>Compartilhar convite</span></button>
+            <button onClick={saveCurrentInvite} className="toolbar-button" title="Salvar código no dispositivo"><Bookmark size={16}/><span>Salvar</span></button>
+            <button onClick={leaveRoom} className="toolbar-button toolbar-leave" title="Sair do encontro"><X size={16}/><span>Sair</span></button>
+          </div>
         </div>
-        <div className="p2p-room-scroll">
-          <section className="media-panel">
-            <div className="media-heading"><div><span className="eyebrow">AO VIVO • WEBRTC</span><h2>Compartilhe o momento.</h2></div><span className="mini-pill"><Users size={15}/>{room.members.length} conectado(s)</span></div>
-            <div className="media-buttons">
-              <button className={'media-btn ' + (room.microphone ? 'is-active' : '')} onClick={() => void toggleMicrophone()} disabled={busyMedia}>{room.microphone ? <Mic size={18}/> : <MicOff size={18}/>}{room.microphone ? 'Desligar microfone' : 'Ativar microfone'}</button>
-              <button className={'media-btn ' + (room.screen ? 'is-active' : '')} onClick={() => void toggleDisplay()} disabled={busyMedia}>{room.screen ? <VideoOff size={18}/> : <MonitorUp size={18}/>}{room.screen ? 'Parar transmissão' : 'Compartilhar tela'}</button>
-              <button className={'media-btn ' + (deafened ? 'is-active' : '')} onClick={() => setDeafened(value => !value)}>
-                {deafened ? <VolumeX size={18}/> : <Volume2 size={18}/>}
-                {deafened ? 'Ouvir participantes' : 'Silenciar recebimento'}
+
+        <div className="room-content">
+          <section className="live-stage" aria-label="Compartilhamento de tela e voz">
+            <header className="stage-heading">
+              <div className="stage-heading-copy"><span className="section-overline">SEU PALCO</span><h2>Aurora <em>Live</em></h2><p>Este espaço é de vocês.</p></div>
+              <span className={'stage-live-pill ' + (broadcasting ? 'streaming' : '')}>
+                <span className="status-indicator"/>{broadcasting ? 'TRANSMISSÃO ATIVA' : 'PRONTO PARA TRANSMITIR'}</span>
+            </header>
+
+            <div className="stage-screen">
+              {room.localScreen && <MediaPlayer stream={room.localScreen} muted label="Sua transmissão"/>}
+              {liveStreams.map(item => <MediaPlayer key={item.id} stream={item.stream} muted={false} label={'Transmissão de ' + memberName(item.peerId)}/>)}
+              {!broadcasting && <div className="stage-empty">
+                <div className="stage-empty-art" aria-hidden="true">
+                  <span className="stage-empty-halo"/><Crystal size={86}/><span className="stage-empty-play"><MonitorUp size={21}/></span>
+                </div>
+                <h3>O palco está pronto.</h3>
+                <p>Compartilhe sua tela ou convide alguém para começar uma transmissão.</p>
+                <span className="stage-empty-caption"><span className="status-indicator"/> AGUARDANDO TRANSMISSÃO</span>
+              </div>}
+            </div>
+
+            <div className="broadcast-controls">
+              <button className={'broadcast-control ' + (room.microphone ? 'control-on' : '')}
+                onClick={() => void toggleMicrophone()} disabled={busyMedia}
+                aria-pressed={room.microphone} title={room.microphone ? 'Desligar microfone' : 'Ligar microfone'}>
+                <span className="broadcast-control-icon">{room.microphone ? <Mic size={19}/> : <MicOff size={19}/>}</span>
+                <span>{room.microphone ? 'Microfone ligado' : 'Ligar microfone'}</span>
+              </button>
+              <button className={'broadcast-control broadcast-screen ' + (room.screen ? 'control-on' : '')}
+                onClick={() => void toggleDisplay()} disabled={busyMedia} aria-pressed={room.screen}
+                title={room.screen ? 'Parar compartilhamento' : 'Iniciar compartilhamento'}>
+                <span className="broadcast-control-icon">{room.screen ? <VideoOff size={19}/> : <MonitorUp size={19}/>}</span>
+                <span>{room.screen ? 'Parar transmissão' : 'Compartilhar tela'}</span>
+              </button>
+              <button className={'broadcast-control broadcast-sound ' + (deafened ? 'control-muted' : '')}
+                onClick={() => setDeafened(value => !value)} aria-pressed={deafened}
+                title={deafened ? 'Voltar a ouvir participantes' : 'Silenciar áudio recebido'}>
+                <span className="broadcast-control-icon">{deafened ? <VolumeX size={19}/> : <Volume2 size={19}/>}</span>
+                <span>{deafened ? 'Som silenciado' : 'Silenciar áudio'}</span>
               </button>
             </div>
-            <div className="stream-toolbar">
-              <label htmlFor="stream-quality">Qualidade de transmissão</label>
-              <select id="stream-quality" value={room.qualityMode} onChange={e => void updateQuality(e.target.value as QualityMode)}>
-                <option value="auto">Automático — recomendado</option>
+
+            <div className="stage-settings">
+              <label htmlFor="video-profile"><Gauge size={17}/> Qualidade da transmissão</label>
+              <select id="video-profile" value={room.qualityMode} onChange={event => void updateQuality(event.target.value as QualityMode)}>
+                <option value="auto">Automático (recomendado)</option>
                 <option value="economy">Econômico · 480p30</option>
                 <option value="balanced">Equilibrado · 720p30</option>
                 <option value="high">Alta qualidade · 1080p30</option>
                 <option value="ultra">Máxima qualidade · 1080p60</option>
               </select>
-              <small>Perfil solicitado: {capturePreset(room.qualityMode, room.members.length).name}</small>
+              <span>Perfil: {selectedProfile.name}</span>
             </div>
-            <div className="screen-wall">
-              {room.localScreen && <StreamVideo stream={room.localScreen} muted label="Sua transmissão"/>}
-              {remoteVideo.map(media => <StreamVideo key={media.id} stream={media.stream} muted={false} label={'Tela de ' + nameOf(media.peerId)}/>)}
-              {!room.localScreen && remoteVideo.length === 0 && <div className="empty-screen">
-                <div className="screen-icon"><MonitorUp size={35}/></div>
-                <strong>Nenhuma transmissão ativa</strong>
-                <span>Qualquer participante pode compartilhar a tela diretamente com os demais.</span>
+
+            {microphoneStreams.length > 0 && <section className="microphone-section" aria-label="Participantes com áudio ativo">
+              <span className="section-overline">ÁUDIO DOS PARTICIPANTES</span>
+              <div className="microphone-grid">{microphoneStreams.map(item => <AudioListener
+                key={item.id} media={item} name={memberName(item.peerId)} muted={deafened}/>)}</div>
+            </section>}
+
+            <div className="diagnostics">
+              <button className="diagnostics-heading" aria-expanded={diagnosticsOpen}
+                onClick={() => setDiagnosticsOpen(value => !value)}>
+                <span><Activity size={17}/> Status da conexão <span className="diagnostics-dot"/></span>
+                <span>Detalhes <ChevronDown size={17}/></span>
+              </button>
+              <div className="diagnostics-summary">
+                <MiniMetric icon={<Wifi size={16}/>} label="Conexão"
+                  value={room.metrics.state === 'connected' ? 'Boa' : room.metrics.state === 'unstable' ? 'Instável' : room.metrics.state === 'connecting' ? 'Negociando' : 'Não medida'}
+                  accent={room.metrics.state === 'connected'}/>
+                <MiniMetric icon={<Gauge size={16}/>} label="Latência" value={room.metrics.rttMs === null ? '—' : room.metrics.rttMs + ' ms'}/>
+                <MiniMetric icon={<Users size={16}/>} label="Pessoas na sala" value={String(memberCount).padStart(2, '0') + ' / 10'}/>
+              </div>
+              {diagnosticsOpen && <div className="diagnostics-detail">
+                <MiniMetric icon={<Activity size={16}/>} label="Saída estimada" value={room.metrics.estimatedUplinkMbps === null ? 'Indisponível' : room.metrics.estimatedUplinkMbps + ' Mbps'}/>
+                <MiniMetric icon={<MonitorUp size={16}/>} label="Captura"
+                  value={room.metrics.videoWidth && room.metrics.videoHeight
+                    ? room.metrics.videoWidth + ' × ' + room.metrics.videoHeight + (room.metrics.videoFps ? ' · ' + Math.round(room.metrics.videoFps) + ' FPS' : '')
+                    : 'Não iniciada'}/>
+                <p>{room.warning || 'Os dados são estimativas de uma conexão WebRTC, não um teste de velocidade.'}</p>
               </div>}
             </div>
-            {remoteAudio.length > 0 && <div className="audio-list">
-              {remoteAudio.map(media => <RemoteAudio key={media.id} media={media} name={nameOf(media.peerId)} muted={deafened}/>)}
-            </div>}
-            <div className="live-diagnostics">
-              <div><Gauge size={17}/><strong>Diagnóstico de rede</strong></div>
-              <span>Estado: <b>{room.metrics.state === 'connected' ? 'Conectado' : room.metrics.state === 'unstable' ? 'Instável' : room.metrics.state === 'connecting' ? 'Negociando' : 'Sem medição'}</b></span>
-              <span>Latência (RTT): <b>{room.metrics.rttMs === null ? 'Não disponível' : room.metrics.rttMs + ' ms'}</b></span>
-              <span>Banda de saída estimada: <b>{room.metrics.estimatedUplinkMbps === null ? 'Não disponível' : room.metrics.estimatedUplinkMbps + ' Mbps'}</b></span>
-              {room.localScreen && <span>Captura real: <b>{room.metrics.videoWidth && room.metrics.videoHeight ? room.metrics.videoWidth + ' × ' + room.metrics.videoHeight : 'Aguardando'}{room.metrics.videoFps ? ' · ' + Math.round(room.metrics.videoFps) + ' FPS' : ''}</b></span>}
-              {room.warning && <small>{room.warning}</small>}
-            </div>
-            <p className="media-disclaimer">Compartilhamento em fase experimental: depende das permissões do sistema. Com 5–10 pessoas, o upload P2P pode limitar a resolução e o FPS.</p>
           </section>
 
-          <section className="room-chat">
-            <div className="chat-header"><MessageCircle size={17}/><strong>Conversa em tempo real</strong><small>Mensagens apenas enquanto a sala está aberta</small></div>
-            {room.messages.length === 0 && <div className="no-messages">Envie a primeira mensagem para começar a conversa.</div>}
-            <div className="p2p-messages" role="log" aria-label="Mensagens da sala">
-              {room.messages.map(message => <article className="message" key={message.id}>
-                <div className="avatar">{message.author.charAt(0).toUpperCase()}</div>
-                <div><header><strong>{message.author}</strong><time dateTime={new Date(message.sentAt).toISOString()}>{new Date(message.sentAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time></header><p>{message.text}</p></div>
+          <section className="conversation-panel" aria-label="Chat da sala">
+            <header className="conversation-header"><span className="conversation-icon"><MessageCircle size={18}/></span>
+              <div><strong>Conversa da sala</strong><small>Mensagens apenas durante o encontro</small></div>
+              <span className="chat-privacy"><LockKeyhole size={13}/> Privado</span></header>
+            <div className="messages-list" ref={messageList} role="log" aria-label="Mensagens da sala" aria-live="polite">
+              {room.messages.length === 0 && <div className="empty-chat"><span className="empty-chat-icon"><MessageCircle size={24}/></span>
+                <strong>A conversa começa aqui.</strong><span>Envie uma mensagem para dar as boas-vindas.</span></div>}
+              {room.messages.map(item => <article className="chat-message" key={item.id}>
+                <Avatar name={item.author} size="small" own={item.senderId === room.localId}/>
+                <div className="chat-message-content"><div className="chat-message-meta"><strong>{item.author}</strong><time dateTime={new Date(item.sentAt).toISOString()}>
+                  {new Date(item.sentAt).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</time></div>
+                  <p>{item.text}</p></div>
               </article>)}
-              <div ref={bottom}/>
             </div>
+            <form className="chat-composer" onSubmit={sendMessage}>
+              <label className="sr-only" htmlFor="message-text">Escrever mensagem</label>
+              <textarea rows={1} id="message-text" maxLength={2000} value={message}
+                onChange={event => setMessage(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                placeholder="Escreva uma mensagem..."/>
+              <button type="submit" className="chat-send" disabled={!message.trim()} aria-label="Enviar mensagem" title="Enviar mensagem"><Send size={19}/></button>
+            </form>
+            <p className="composer-hint"><ShieldCheck size={13}/> Conversa temporária, sem histórico em nuvem</p>
           </section>
-        </div>
-        <div className="write-area">
-          <form className="write" onSubmit={sendMessage}>
-            <MessageCircle size={19} className="compose-icon"/>
-            <label htmlFor="composer" className="sr-only">Mensagem</label>
-            <textarea id="composer" rows={1} maxLength={2000} value={text}
-              onChange={e => setText(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}
-              placeholder="Enviar mensagem para a sala privada"/>
-            <button className="send" aria-label="Enviar mensagem" disabled={!text.trim()}><Send size={18}/></button>
-          </form>
-          <small><ShieldCheck size={13}/> Comunicação P2P • Sem histórico permanente • Sem necessidade de conta</small>
         </div>
       </>}
 
-      {(feedback || room.error) && <div className={'room-toast ' + (room.error ? 'toast-error' : '')} role="status">
-        <Info size={16}/><span>{room.error || feedback}</span>
-        <button aria-label="Fechar aviso" onClick={() => { setFeedback(''); if (room.phase === 'error') leave(); }}><X size={16}/></button>
+      {(feedback || room.error) && <div className={'aurora-toast ' + (room.error ? 'toast-error' : '')} role="status">
+        <span className="toast-icon">{room.error ? <Info size={17}/> : <Check size={17}/>}</span>
+        <p>{room.error || feedback}</p>
+        <button onClick={() => { setFeedback(''); if (room.phase === 'error') leaveRoom(); }} aria-label="Fechar aviso" title="Fechar"><X size={17}/></button>
       </div>}
     </main>
 
-    <aside className="right p2p-side">
-      <header><Activity size={19}/><strong>Central Aurora</strong></header>
-      <div className="right-cover"><Crystal size={100}/></div>
-      <div className="right-copy">
-        <span className="eyebrow">CONEXÃO SEM MENSALIDADE</span>
-        <h2>Seu espaço.<br/><em>Sua liberdade.</em></h2>
-        <p>O serviço gratuito permite encontrar o outro computador. Texto, voz e tela são enviados diretamente por WebRTC quando a rede permite.</p>
-        <div className="division"/>
-        <div className="metric"><span><ShieldCheck size={17}/>Sala privada</span><strong className="ready">Por convite</strong></div>
-        <div className="metric"><span><Users size={17}/>Participantes</span><strong>{room.members.length}/10</strong></div>
-        <div className="metric"><span><Headphones size={17}/>Voz P2P</span><strong>Experimental</strong></div>
-        <div className="metric"><span><MonitorUp size={17}/>Transmissão</span><strong>Experimental</strong></div>
-        {connected && <>
-          <div className="metric"><span><Gauge size={17}/>RTT medido</span><strong>{room.metrics.rttMs === null ? '—' : room.metrics.rttMs + ' ms'}</strong></div>
-          <div className="metric"><span><Wifi size={17}/>Rede direta</span><strong>{room.metrics.direct === null ? 'A verificar' : room.metrics.direct ? 'Sem TURN' : 'Retransmitida'}</strong></div>
-        </>}
-        {connected && <div className="right-members">
-          <button onClick={() => setMembersExpanded(p => !p)}><Users size={16}/> Quem está na sala <ChevronDown size={16}/></button>
-          {membersExpanded && room.members.map(m => <div className="right-member" key={m.id}><span className="dot on"/>{m.name}{m.host && ' ★'}</div>)}
+    {inspectorOpen && <button type="button" className="inspector-scrim" aria-label="Fechar informações" onClick={() => setInspectorOpen(false)}/>}
+    <aside className={'inspector-panel ' + (inspectorOpen ? 'inspector-visible' : '')} aria-label="Painel Aurora">
+      <header className="inspector-header"><span className="inspector-header-icon"><Activity size={18}/></span>
+        <strong>Central Aurora</strong><button className="inspector-close icon-control" onClick={() => setInspectorOpen(false)} aria-label="Fechar informações"><X size={18}/></button></header>
+      <div className="inspector-content">
+        <div className="inspector-art"><span className="inspector-orbit"/><span className="inspector-orbit orbit-alt"/><Crystal size={118}/></div>
+        <div className="inspector-kicker"><Sparkles size={14}/> BEM-VINDO AO SEU UNIVERSO</div>
+        <h2>Mais perto.<br/><em>Mais conectado.</em></h2>
+        <p>Um espaço simples para encontrar seus amigos, conversar e compartilhar experiências.</p>
+        <div className="inspector-separator"/>
+        <div className="inspector-facts">
+          <MiniMetric icon={<ShieldCheck size={17}/>} label="Privacidade" value="Por convite" accent/>
+          <MiniMetric icon={<Users size={17}/>} label="Participantes" value={String(memberCount).padStart(2, '0') + ' / 10'}/>
+          <MiniMetric icon={<Headphones size={17}/>} label="Voz" value="Experimental"/>
+          <MiniMetric icon={<MonitorUp size={17}/>} label="Compartilhar tela" value="Experimental"/>
+          {connected && <MiniMetric icon={<Gauge size={17}/>} label="Latência"
+            value={room.metrics.rttMs === null ? 'A verificar' : room.metrics.rttMs + ' ms'}/>}
+        </div>
+        {connected && <div className="inspector-members">
+          <button onClick={() => setMembersExpanded(value => !value)} aria-expanded={membersExpanded}>
+            <Users size={16}/> Pessoas conectadas <ChevronDown size={16}/>
+          </button>
+          {membersExpanded && room.members.map(member => <div className="inspector-member" key={member.id}>
+            <Avatar name={member.name} size="small" own={member.id === room.localId}/>
+            <span>{member.name}</span>{member.host && <span className="host-tag">Host</span>}
+            <span className="online-pin"/>
+          </div>)}
         </div>}
+        <div className="inspector-tip"><Sparkles size={17}/><span>{connected
+          ? 'Dica: cada participante pode compartilhar sua própria tela.'
+          : 'Dica: crie uma sala e envie o convite pelo WhatsApp.'}</span></div>
       </div>
-      <footer><Sparkles size={17}/> Feito para conectar pessoas.</footer>
+      <div className="inspector-footer"><span className="footer-orb"/><span>FEITO PARA CONECTAR PESSOAS</span></div>
     </aside>
 
-    {settings && <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) setSettings(false); }}>
-      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-        <header><div><span className="eyebrow">PREFERÊNCIAS</span><h2 id="settings-title">Configurações</h2></div><button onClick={() => setSettings(false)} aria-label="Fechar configurações"><X/></button></header>
-        <label htmlFor="nickname">Seu apelido (não é uma conta)</label>
-        <input id="nickname" maxLength={32} value={nickname} onChange={e => updateNickname(e.target.value)}/>
-        {connected && <p className="settings-help">A alteração de apelido será aplicada na próxima sala.</p>}
-        <label>Aparência</label>
-        <div className="themes"><button className={theme === 'dark' ? 'active' : ''} onClick={() => setTheme('dark')}><Moon size={16}/> Escuro</button><button className={theme === 'light' ? 'active' : ''} onClick={() => setTheme('light')}><Sun size={16}/> Claro</button></div>
-        <p className="notice"><LockKeyhole size={17}/> Não compartilhe o código publicamente: qualquer pessoa que o possua poderá entrar. A sala termina quando o anfitrião sai.</p>
-        <button className="done" onClick={() => setSettings(false)}>Concluído <ArrowRight size={17}/></button>
+    {settingsOpen && <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
+      <section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-heading">
+        <header className="dialog-heading"><span className="dialog-heading-symbol"><Settings2 size={22}/></span>
+          <div><span className="section-overline">PERSONALIZE SEU ESPAÇO</span><h2 id="settings-heading">Configurações</h2></div>
+          <button className="dialog-close icon-control" aria-label="Fechar configurações" onClick={() => setSettingsOpen(false)} autoFocus><X size={20}/></button>
+        </header>
+        <div className="dialog-body">
+          <label className="dialog-field-label" htmlFor="profile-name">Seu nome de exibição</label>
+          <div className="nickname-input"><Avatar name={cleanName(nickname)} size="small"/><input id="profile-name" value={nickname} maxLength={32}
+            onChange={event => updateNickname(event.target.value)} placeholder="Como devemos chamar você?"/></div>
+          {connected && <p className="field-helper">A alteração de nome será aplicada na próxima sala.</p>}
+          <label className="dialog-field-label">Aparência</label>
+          <div className="theme-selector" role="group" aria-label="Tema do aplicativo">
+            <button className={theme === 'dark' ? 'selected' : ''} aria-pressed={theme === 'dark'} onClick={() => setTheme('dark')}><Moon size={17}/> Escuro</button>
+            <button className={theme === 'light' ? 'selected' : ''} aria-pressed={theme === 'light'} onClick={() => setTheme('light')}><Sun size={17}/> Claro</button>
+            <button className={theme === 'system' ? 'selected' : ''} aria-pressed={theme === 'system'} onClick={() => setTheme('system')}><Settings2 size={17}/> Sistema</button>
+          </div>
+          <div className="privacy-disclaimer"><LockKeyhole size={19}/><p>Esta versão usa apelidos locais, não contas. Quem souber o código poderá entrar na sala enquanto o anfitrião estiver online.</p></div>
+        </div>
+        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.4</span>
+          <button onClick={() => setSettingsOpen(false)}>Concluído <ArrowRight size={17}/></button></footer>
       </section>
     </div>}
   </div>;
