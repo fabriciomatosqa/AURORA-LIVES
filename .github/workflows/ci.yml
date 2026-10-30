@@ -82,6 +82,7 @@ jobs:
           & pwsh -NoProfile -NonInteractive -File scripts/verify-windows-signing.ps1 *> $null
           if ($LASTEXITCODE -eq 0) { throw "O pipeline aceitou assinatura sem verificação." }
           Write-Host "A geração de release falha corretamente na ausência de certificado."
+          $global:LASTEXITCODE = 0  # Negative tests succeeded; pwsh GitHub shell propagates LASTEXITCODE.
       - name: Generate icons from original Aurora emblem
         run: npm run icons
       - name: Validate Tauri native crate
