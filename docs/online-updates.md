@@ -36,3 +36,23 @@ O programa procura a maior versão semântica publicada, incluindo pré-lançame
 - CI compila Tauri em Windows/Linux. Testes reais de instalação requerem computadores com Windows/Linux e a publicação de uma versão posterior à 0.0.5.
 
 O programa não deve declarar que a instalação terminou antes de a nova versão ser aberta.
+
+
+## Atualizações no padrão AURORA AutoFill (0.0.6)
+
+Implementado exclusivamente no repositório AURORA LIVES, após consulta **somente leitura** ao projeto AutoFill:
+
+- Consulta GitHub Releases ao iniciar e a cada seis horas; botão de verificação manual.
+- Aviso com **Sim, atualizar / Não, depois**. Ao adiar, reaparece após 3 horas ou quando houver outra versão mais nova. O estado de adiamento é salvo apenas localmente.
+- Canal de pré-lançamentos habilitado por padrão, com preferência persistida para receber apenas releases estáveis se desejar.
+- Download em streaming, progresso percentual, cancelamento, limite de tamanho e rejeição de arquivos incompletos.
+- Verificação do manifesto `SHA256SUMS.txt` publicado com o release e, quando o GitHub oferece metadado digest, comparação adicional do SHA-256.
+- Segue URLs de redirecionamento somente por HTTPS para os domínios oficiais do GitHub usados nos assets.
+- Windows: instalador **Inno Setup** por usuário, flags `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /AURORAUPDATE=1`, aplicado somente após aprovação do usuário; em uma sala ativa, pede confirmação.
+- Linux: gerenciador de pacotes via `xdg-open` com confirmação do sistema.
+
+**Atenção:** a série até 0.0.5 usava NSIS. Inno Setup possui identidade de instalação distinta, de modo que uma instalação pré-existente pode ser listada separadamente no Windows. Remova a instalação NSIS antiga pelo próprio Windows se necessário, depois de instalar a nova. Não removemos dados pessoais na compilação.
+
+**Segurança:** SHA-256 protege a integridade do arquivo baixado mas não substitui assinatura independente. Tanto o AutoFill atual como esta distribuição do LIVES são **não assinados** e podem sofrer bloqueio por Smart App Control, mesmo quando o download é feito dentro do app. Não recomende desativar proteção do sistema.
+
+Esta implementação não utiliza a Microsoft Store, certificados pagos, servidor dedicado ou qualquer modificação no repositório AutoFill.

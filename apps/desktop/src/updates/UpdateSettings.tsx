@@ -1,4 +1,4 @@
-import { ArrowDownToLine, ArrowRight, CheckCircle2, CloudDownload, DownloadCloud, ExternalLink, Info, LoaderCircle, RefreshCcw, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowDownToLine, ArrowRight, CheckCircle2, CloudDownload, DownloadCloud, ExternalLink, Info, LoaderCircle, RefreshCcw, ShieldCheck, Sparkles, XCircle } from 'lucide-react';
 import type { OnlineUpdater } from './useOnlineUpdater';
 
 function formatSize(bytes: number): string {
@@ -17,7 +17,8 @@ export function UpdateIndicator({ updater, onClick }: { updater: OnlineUpdater; 
 
 export function UpdateSettings({ updater, connected }: { updater: OnlineUpdater; connected: boolean }) {
   const {
-    supported, status, currentVersion, available, progress, error, check, download, install
+    supported, status, currentVersion, available, progress, error, check, download, cancel, install,
+    includePrereleases, setIncludePrereleases
   } = updater;
 
   function launchInstaller() {
@@ -36,6 +37,11 @@ export function UpdateSettings({ updater, connected }: { updater: OnlineUpdater;
       <span>Versão instalada</span>
       <strong>v{currentVersion}</strong>
     </div>
+    <label className="updates-channel-toggle">
+      <input type="checkbox" checked={includePrereleases}
+        onChange={event => setIncludePrereleases(event.target.checked)} />
+      <span><strong>Receber versões de teste</strong><small>Inclui versões publicadas como Pre-release no GitHub.</small></span>
+    </label>
     {!supported && <div className="updates-message"><Info size={17}/>
       <p>A atualização integrada funciona no aplicativo instalado para Windows ou Linux.</p></div>}
 
@@ -67,9 +73,14 @@ export function UpdateSettings({ updater, connected }: { updater: OnlineUpdater;
       {status === 'available' && <button className="update-primary-button" onClick={() => void download()}>
         <ArrowDownToLine size={17}/> Baixar atualização
       </button>}
-      {status === 'downloading' && <button className="update-primary-button" disabled>
-        <LoaderCircle className="updates-spin" size={17}/> Baixando...
-      </button>}
+      {status === 'downloading' && <>
+        <button className="update-primary-button" disabled>
+          <LoaderCircle className="updates-spin" size={17}/> Baixando...
+        </button>
+        <button className="updates-cancel-button" type="button" onClick={() => void cancel()}>
+          <XCircle size={16}/> Cancelar download
+        </button>
+      </>}
       {status === 'downloaded' && <button className="update-primary-button" onClick={launchInstaller}>
         <DownloadCloud size={17}/> Instalar atualização
       </button>}
@@ -84,8 +95,8 @@ export function UpdateSettings({ updater, connected }: { updater: OnlineUpdater;
       <RefreshCcw size={15}/> Verificar atualizações
     </button>}
     <p className="updates-footnote">
-      <ShieldCheck size={14}/> O download é obtido do repositório oficial e conferido com o SHA-256 do release.
-      O sistema pode solicitar confirmação para instalar, especialmente no Linux.
+      <ShieldCheck size={14}/> Atualizações obtidas diretamente do GitHub e conferidas com SHA-256.
+      O Windows ainda poderá bloquear instaladores sem assinatura, e o Linux pode solicitar autorização.
     </p>
     <a className="updates-github-link" href="https://github.com/fabriciomatosqa/AURORA-LIVES/releases"
       target="_blank" rel="noopener noreferrer" aria-label="Abrir histórico de versões no GitHub">

@@ -36,6 +36,8 @@ struct Release {
     tag_name: String,
     draft: bool,
     #[serde(default)]
+    prerelease: bool,
+    #[serde(default)]
     body: Option<String>,
     published_at: Option<String>,
     assets: Vec<ReleaseAsset>,
@@ -45,6 +47,8 @@ struct ReleaseAsset {
     name: String,
     browser_download_url: String,
     size: u64,
+    #[serde(default)]
+    digest: Option<String>,
 }
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -88,12 +92,23 @@ pub struct UpdateService {
     client: Client,
     downloaded: Mutex<Option<VerifiedInstaller>>,
     busy: AtomicBool,
+    cancel_requested: AtomicBool,
 }
 impl UpdateService {
     pub fn new() -> Result<Self, String> {
         let client = Client::builder()
             .user_agent("AURORA-LIVES-Desktop-Updater")
-            .redirect(Policy::limited(8))
+            .redirect(Policy::custom(|attempt| {
+                let address = attempt.url();
+                let allowed_host = matches!(address.host_str(),
+                    Some("github.com" | "api.github.com" |
+                         "release-assets.githubusercontent.com" | "objects.githubusercontent.com"));
+                if attempt.previous().len() >= 8 || address.scheme() != "https" || !allowed_host {
+                    attempt.stop()
+                } else {
+                    attempt.follow()
+                }
+            }))
             .timeout(Duration::from_secs(180))
             .build()
             .map_err(|e| format!("Falha ao preparar conexão: {e}"))?;
@@ -101,6 +116,7 @@ impl UpdateService {
             client,
             downloaded: Mutex::new(None),
             busy: AtomicBool::new(false),
+            cancel_requested: AtomicBool::new(false),
         })
     }
 }
@@ -145,17 +161,17 @@ fn asset_for<'a>(release: &'a Release, file_name: &str) -> Option<&'a ReleaseAss
         .find(|a| a.name == file_name && a.size > 0 && a.size <= MAX_DOWNLOAD && official_url(&release.tag_name, a))
 }
 
-fn suitable(release: &Release, current: &Version) -> bool {
-    !release.draft
+fn suitable(release: &Release, current: &Version, include_prereleases: bool) -> bool {
+    !release.draft && (include_prereleases || !release.prerelease)
         && parse_tag(&release.tag_name).is_some_and(|v| v > *current)
         && asset_for(release, installer_name()).is_some()
         && asset_for(release, CHECKSUM_FILE).is_some()
 }
 
-fn newest<'a>(releases: &'a [Release], current: &Version) -> Option<&'a Release> {
+fn newest<'a>(releases: &'a [Release], current: &Version, include_prereleases: bool) -> Option<&'a Release> {
     releases
         .iter()
-        .filter(|r| suitable(r, current))
+        .filter(|r| suitable(r, current, include_prereleases))
         .max_by_key(|r| parse_tag(&r.tag_name))
 }
 
@@ -174,12 +190,12 @@ async fn published_releases(client: &Client) -> Result<Vec<Release>, String> {
 }
 
 #[tauri::command]
-pub async fn check_for_updates(app: AppHandle) -> Result<CheckResult, String> {
+pub async fn check_for_updates(app: AppHandle, include_prereleases: bool) -> Result<CheckResult, String> {
     let current = app.package_info().version.clone();
     let service = app.state::<UpdateService>();
     let client = service.client.clone();
     let releases = published_releases(&client).await?;
-    let latest = newest(&releases, &current).map(|release| AvailableUpdate {
+    let latest = newest(&releases, &current, include_prereleases).map(|release| AvailableUpdate {
         tag: release.tag_name.clone(),
         version: parse_tag(&release.tag_name).expect("already filtered").to_string(),
         // Rendered as plain text in React; never inserted as HTML.
@@ -226,18 +242,19 @@ impl Drop for BusyReset<'_> {
 }
 
 #[tauri::command]
-pub async fn download_update(app: AppHandle, tag: String) -> Result<DownloadResult, String> {
+pub async fn download_update(app: AppHandle, tag: String, include_prereleases: bool) -> Result<DownloadResult, String> {
     let state = app.state::<UpdateService>();
     if state.busy.swap(true, Ordering::SeqCst) {
         return Err("Já existe um download de atualização em andamento.".into());
     }
     let _busy = BusyReset(&state.busy);
+    state.cancel_requested.store(false, Ordering::SeqCst);
     let client = state.client.clone();
     let current = app.package_info().version.clone();
 
     // Never accept an arbitrary URL, file name or path from the front end.
     let releases = published_releases(&client).await?;
-    let release = newest(&releases, &current)
+    let release = newest(&releases, &current, include_prereleases)
         .filter(|release| release.tag_name == tag)
         .ok_or("Esta versão não está mais disponível como atualização. Verifique novamente.")?;
     let asset = asset_for(release, installer_name())
@@ -261,6 +278,13 @@ pub async fn download_update(app: AppHandle, tag: String) -> Result<DownloadResu
     let manifest = String::from_utf8(manifest_bytes.to_vec())
         .map_err(|_| "Arquivo SHA-256 inválido.".to_string())?;
     let sha256 = expected_checksum(&manifest, &asset.name)?;
+    // GitHub supplies an independent metadata digest on modern releases.
+    if let Some(github_digest) = &asset.digest {
+        let expected = format!("sha256:{sha256}");
+        if !github_digest.eq_ignore_ascii_case(&expected) {
+            return Err("O SHA-256 da API do GitHub não corresponde ao manifesto do release.".into());
+        }
+    }
     let version = parse_tag(&release.tag_name)
         .ok_or("Versão do GitHub inválida.")?
         .to_string();
@@ -288,6 +312,9 @@ pub async fn download_update(app: AppHandle, tag: String) -> Result<DownloadResu
     let partial = dir.join(format!("{}-{}.part", &sha256[..16], asset.name));
     let _ = tokio::fs::remove_file(&partial).await;
     let transfer: Result<(), String> = async {
+        if state.cancel_requested.load(Ordering::SeqCst) {
+            return Err("Download cancelado.".into());
+        }
         let response = client
             .get(&asset.browser_download_url)
             .send()
@@ -304,6 +331,9 @@ pub async fn download_update(app: AppHandle, tag: String) -> Result<DownloadResu
         let mut received = 0u64;
         let mut last_percent: i16 = -1;
         while let Some(chunk) = stream.next().await {
+            if state.cancel_requested.load(Ordering::SeqCst) {
+                return Err("Download cancelado.".into());
+            }
             let chunk = chunk.map_err(|e| format!("Download interrompido: {e}"))?;
             received += chunk.len() as u64;
             if received > asset.size || received > MAX_DOWNLOAD {
@@ -320,6 +350,9 @@ pub async fn download_update(app: AppHandle, tag: String) -> Result<DownloadResu
                     downloaded_bytes: received, total_bytes: asset.size, percent: pct as u8
                 });
             }
+        }
+        if state.cancel_requested.load(Ordering::SeqCst) {
+            return Err("Download cancelado.".into());
         }
         file.flush().await.map_err(|e| format!("Falha ao finalizar o arquivo: {e}"))?;
         file.sync_all().await.map_err(|e| format!("Falha ao salvar instalador: {e}"))?;
@@ -351,6 +384,15 @@ pub async fn download_update(app: AppHandle, tag: String) -> Result<DownloadResu
 /// Windows installer runs as a separate process, then the app exits. On Linux
 /// xdg-open invokes the configured package manager which may ask for privileges.
 #[tauri::command]
+pub fn cancel_update_download(app: AppHandle) -> Result<(), String> {
+    let state = app.state::<UpdateService>();
+    if state.busy.load(Ordering::SeqCst) {
+        state.cancel_requested.store(true, Ordering::SeqCst);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn install_update(app: AppHandle) -> Result<(), String> {
     let state = app.state::<UpdateService>();
     if state.busy.load(Ordering::SeqCst) {
@@ -367,7 +409,11 @@ pub fn install_update(app: AppHandle) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
+        // Our Windows distribution now uses Inno Setup, like AURORA AutoFill.
+        // The user has explicitly approved this update in the application.
         Command::new(&stored.path)
+            .args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+                   "/SP-", "/AURORAUPDATE=1"])
             .spawn()
             .map_err(|e| format!("Não foi possível iniciar o instalador do Windows: {e}"))?;
         app.exit(0);
@@ -394,11 +440,12 @@ mod tests {
         ReleaseAsset {
             name: name.into(),
             browser_download_url: format!("https://github.com/{REPOSITORY}/releases/download/{tag}/{name}"),
-            size
+            size,
+            digest: None
         }
     }
     fn release(tag: &str, draft: bool) -> Release {
-        Release { tag_name: tag.into(), draft, body: None,
+        Release { tag_name: tag.into(), draft, prerelease: tag.contains("-preview"), body: None,
             published_at: None,
             assets: vec![asset(installer_name(), tag, 100), asset(CHECKSUM_FILE, tag, 85)]
         }
@@ -412,15 +459,15 @@ mod tests {
         assert!(parse_tag("hello").is_none());
         let versions = vec![release("v0.0.5-preview", false), release("v0.0.9-preview", true),
             release("v0.0.6-preview", false)];
-        assert_eq!(newest(&versions, &Version::new(0,0,5)).unwrap().tag_name, "v0.0.6-preview");
-        assert!(newest(&versions, &Version::new(0,0,6)).is_none());
+        assert_eq!(newest(&versions, &Version::new(0,0,5), true).unwrap().tag_name, "v0.0.6-preview");
+        assert!(newest(&versions, &Version::new(0,0,6), true).is_none());
     }
 
     #[test]
     fn rejects_external_assets_and_oversized_downloads() {
         let mut r = release("v0.0.6-preview", false);
         r.assets[0].browser_download_url = "https://evil.example/setup.exe".to_owned();
-        assert!(!suitable(&r, &Version::new(0,0,5)));
+        assert!(!suitable(&r, &Version::new(0,0,5), true));
         r.assets[0] = asset(installer_name(), &r.tag_name, MAX_DOWNLOAD + 1);
         assert!(!suitable(&r, &Version::new(0,0,5)));
     }
@@ -431,6 +478,23 @@ mod tests {
         let checksums = format!("{}  wrong.exe\n{}  {}\n", "b".repeat(64), hash, installer_name());
         assert_eq!(expected_checksum(&checksums, installer_name()).unwrap(), hash);
         assert!(expected_checksum("deadbeef  other.exe", installer_name()).is_err());
+    }
+
+    #[test]
+    fn stable_channel_does_not_offer_unapproved_previews() {
+        let versions = vec![release("v0.0.6-preview", false), release("v0.0.7", false)];
+        assert_eq!(newest(&versions, &Version::new(0,0,5), false).unwrap().tag_name, "v0.0.7");
+        assert!(newest(&versions[..1], &Version::new(0,0,5), false).is_none());
+        assert!(newest(&versions[..1], &Version::new(0,0,5), true).is_some());
+    }
+
+    #[test]
+    fn github_digest_can_be_compared_against_checksum_manifest() {
+        let hash = "d".repeat(64);
+        let a = asset(installer_name(), "v0.0.6-preview", 200);
+        let manifest = format!("{}  {}", hash, a.name);
+        let checksum = expected_checksum(&manifest, &a.name).unwrap();
+        assert_eq!(format!("sha256:{checksum}"), format!("sha256:{hash}"));
     }
 
     #[test]
