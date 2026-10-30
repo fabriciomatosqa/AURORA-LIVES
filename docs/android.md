@@ -45,3 +45,11 @@ O frontend está em src/App.tsx, src/p2p, src/android.css e src/platform.ts. O A
 ## Distribuição
 
 O workflow .github/workflows/android.yml compila um APK de teste ARM64 em PR e main e o disponibiliza como artefato GitHub Actions. Para um APK atualizável e com assinatura constante, é necessária uma chave de assinatura Android armazenada em secrets e teste de instalação real.
+
+## Permissões de microfone
+
+O Android precisa autorizar RECORD_AUDIO no sistema **e** conceder a permissão de microfone dentro do WebView. A camada Rust Tauri permite apenas a solicitação de microfone no WebView, sem conceder acesso à câmera/localização; o Android ainda pode mostrar seu prompt nativo de permissão. Testes em aparelhos reais continuam necessários para confirmar captura e áudio remoto.
+
+## Download direto na release
+
+O build na branch principal anexa também `AURORA-LIVES-Android-arm64-DEBUG.apk` à release `v0.0.7-preview` depois da geração de Windows/Linux. Este arquivo é **uma prévia de depuração**, assinado pelo runner com chave temporária: não garante atualizações sem reinstalar. O checksum separado `SHA256SUMS-ANDROID.txt` permite verificar a integridade do download.

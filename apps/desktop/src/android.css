@@ -329,6 +329,12 @@ html[data-platform="android"] .connection-wait h2 { font-size:22px; }
   html[data-platform="android"] .room-content .conversation-panel {
     display:flex; grid-column:2; grid-row:1; background:var(--main-bg);
   }
+  /* When rotating from portrait, always show both panes regardless of
+     which mobile tab was selected before rotation. */
+  html[data-platform="android"] .room-content.mobile-view-chat .live-stage,
+  html[data-platform="android"] .room-content.mobile-view-stage .conversation-panel {
+    display:flex;
+  }
   html[data-platform="android"] .room-content .mobile-members-panel { display:none; }
   html[data-platform="android"] .room-content.mobile-view-members .live-stage,
   html[data-platform="android"] .room-content.mobile-view-members .conversation-panel { display:none; }
