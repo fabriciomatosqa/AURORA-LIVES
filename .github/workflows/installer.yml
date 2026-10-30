@@ -64,6 +64,13 @@ jobs:
           pattern: aurora-installer-*
           path: dist-installers
           merge-multiple: true
+      - name: Identificar versão do aplicativo
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./apps/desktop/package.json').version")"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=v$VERSION-preview" >> "$GITHUB_ENV"
       - name: Padronizar nomes e checksums
         shell: bash
         run: |
@@ -83,14 +90,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view v0.0.4-preview >/dev/null 2>&1; then
-            echo "A prévia já existe; evitando alterar instaladores publicados."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "A prévia $TAG já existe; evitando alterar instaladores publicados."
             exit 0
           fi
-          gh release create v0.0.4-preview \
+          gh release create "$TAG" \
             --target "$GITHUB_SHA" \
-            --title "AURORA LIVES 0.0.4 — Nova experiência visual" \
-            --notes "Grande atualização visual: interface Aurora redesenhada, nova tela inicial, palco de transmissão, chat, painéis, convites e indicadores; temas claro, escuro e seguir sistema reais; acessibilidade, contraste e layout adaptável. Mantém o mesmo cliente para anfitrião e convidados, chat WebRTC P2P e sinalização PeerJS Cloud gratuita. Sem servidor dedicado nem TURN. Microfone/tela experimentais; 1080p60 não é garantido. Instaladores não assinados." \
+            --title "AURORA LIVES $VERSION — Prévia" \
+            --generate-notes \
             --prerelease \
             release/AURORA-LIVES-Windows-x64-Setup.exe \
             release/AURORA-LIVES-Linux-amd64.deb \
