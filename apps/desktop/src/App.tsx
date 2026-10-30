@@ -10,6 +10,8 @@ import { RoomSession, emptyRoom, type RemoteMedia, type RoomSnapshot } from './p
 import { cleanName, formatRoomCode, normalizeRoomCode } from './p2p/protocol';
 import { capabilities, capturePreset, type QualityMode } from './p2p/quality';
 import { inviteMessage, readSavedInvites, saveInvite, SAVED_INVITES_KEY, type SavedInvite } from './p2p/invites';
+import { useOnlineUpdater } from './updates/useOnlineUpdater';
+import { UpdateIndicator, UpdateSettings } from './updates/UpdateSettings';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -123,6 +125,7 @@ export default function App() {
   const session = useRef<RoomSession | null>(null);
   const messageList = useRef<HTMLDivElement>(null);
   const support = useMemo(capabilities, []);
+  const updater = useOnlineUpdater();
   const connected = room.phase === 'connected';
   const joining = room.phase === 'connecting' || room.phase === 'reconnecting';
   const isHost = room.role === 'host';
@@ -354,9 +357,10 @@ export default function App() {
         <div className="topbar-page"><strong>{connected ? 'Encontro privado' : joining ? 'Conectando sua sala' : 'Visão geral'}</strong>
           <small>{connected ? 'Sua comunidade, do seu jeito' : 'Um lugar para se encontrar'}</small></div>
         <div className="topbar-spacer"/>
+        <UpdateIndicator updater={updater} onClick={() => setSettingsOpen(true)}/>
         <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
           <span className="status-indicator"/>
-          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.4'}
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.5'}
         </span>
         <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
@@ -650,9 +654,10 @@ export default function App() {
             <button className={theme === 'light' ? 'selected' : ''} aria-pressed={theme === 'light'} onClick={() => setTheme('light')}><Sun size={17}/> Claro</button>
             <button className={theme === 'system' ? 'selected' : ''} aria-pressed={theme === 'system'} onClick={() => setTheme('system')}><Settings2 size={17}/> Sistema</button>
           </div>
+          <UpdateSettings updater={updater} connected={connected}/>
           <div className="privacy-disclaimer"><LockKeyhole size={19}/><p>Esta versão usa apelidos locais, não contas. Quem souber o código poderá entrar na sala enquanto o anfitrião estiver online.</p></div>
         </div>
-        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.4</span>
+        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.5</span>
           <button onClick={() => setSettingsOpen(false)}>Concluído <ArrowRight size={17}/></button></footer>
       </section>
     </div>}

@@ -73,6 +73,8 @@ jobs:
         run: npm run icons
       - name: Validate Tauri native crate
         run: cargo check --manifest-path src-tauri/Cargo.toml
+      - name: Test updater native logic
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
   visual-smoke:
     name: Frontend visual smoke · Chromium

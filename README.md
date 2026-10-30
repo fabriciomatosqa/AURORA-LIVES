@@ -1,6 +1,6 @@
 # AURORA LIVES
 
-**Versão 0.0.3 (prévia) — Aurora Smart Connect**
+**Versão 0.0.5 (prévia) — Atualizações online**
 
 Aplicativo desktop de comunicação para Windows e Linux com a logo cristalina AURORA. **Um único instalador para todos:** qualquer pessoa pode criar uma sala, convidar outras pessoas, conversar e tentar compartilhar voz/tela, sem contas nem servidor pago.
 
@@ -33,6 +33,13 @@ Em P2P malha, o transmissor envia um fluxo para cada espectador. Com grupos gran
 
 Os convites são secretos temporários: quem souber o código pode entrar. Não compartilhe publicamente. A identidade não é autenticada. O transporte WebRTC é criptografado, mas não verifica a identidade do usuário. Instaladores não assinados.
 
+## Atualização online a partir da versão 0.0.5
+
+O aplicativo verifica ao iniciar e a cada seis horas se existe release mais recente no GitHub. Em **Configurações → Atualizações online**, você pode procurar, baixar com progresso e abrir o instalador diretamente, sem encontrar a versão no navegador. O download é verificado com SHA-256 e o usuário confirma a instalação. No Linux, o gerenciador de pacotes pode solicitar senha.
+
+**Primeira instalação:** versões 0.0.4 e anteriores ainda não sabem verificar atualizações; instale 0.0.5 uma vez pela [página de releases](https://github.com/fabriciomatosqa/AURORA-LIVES/releases). As próximas versões aparecerão dentro do AURORA LIVES.
+
+Leia [docs/online-updates.md](docs/online-updates.md) para detalhes e limitações.
 ## Desenvolvimento
 
 ```bash
