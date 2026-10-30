@@ -184,13 +184,13 @@ a { color: var(--accent-blue); }
 }
 .sidebar-current { position: relative; background: var(--accent-panel); color: var(--text); border: 1px solid rgba(102, 193, 211, .18); }
 .sidebar-current:before { content: ""; position: absolute; left: 0; width: 3px; height: 19px; border-radius: 0 3px 3px 0; background: var(--accent); }
-.sidebar-current span:nth-child(2), .sidebar-channel span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.sidebar-current span:nth-child(2), .sidebar-channel span:not(.channel-indicator) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .sidebar-current-icon { color: var(--accent); }
 .sidebar-active-dot { background: var(--accent); border-radius: 50%; width: 5px; height: 5px; box-shadow: 0 0 8px var(--accent); flex: none; }
 .sidebar-channel { color: var(--muted); margin-top: 5px; }
 .sidebar-channel svg { color: var(--faint); flex: none; }
 .sidebar-channel:first-of-type { color: var(--text-soft); }
-.channel-indicator { height: 5px; width: 5px; border-radius: 50%; background: var(--accent-violet); flex: none; }
+.channel-indicator { height: 5px; width: 5px; flex: 0 0 5px; border-radius: 50%; background: var(--accent-violet); }
 .member-counter { margin-left: auto; padding: 4px 8px; font-size: 9px; letter-spacing: 0; background: var(--surface-hover); color: var(--text-soft); border-radius: 7px; }
 .sidebar-members { display: flex; flex-direction: column; gap: 5px; }
 .sidebar-member { display: flex; gap: 9px; align-items: center; min-height: 42px; padding: 5px 9px; font-size: 12px; color: var(--text-soft); }

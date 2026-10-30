@@ -143,6 +143,17 @@ export default function App() {
     return () => media.removeEventListener?.('change', applyTheme);
   }, [theme]);
 
+  useEffect(() => {
+    function adjustPanels() {
+      // Narrow windows use drawers: don't leave desktop inspector as a
+      // blocking overlay after resizing the application.
+      if (window.innerWidth <= 1320) setInspectorOpen(false);
+      if (window.innerWidth > 740) setSidebarOpen(false);
+    }
+    window.addEventListener('resize', adjustPanels);
+    return () => window.removeEventListener('resize', adjustPanels);
+  }, []);
+
   useEffect(() => () => session.current?.stop(), []);
 
   useEffect(() => {
