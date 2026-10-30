@@ -123,7 +123,8 @@ describe('fluxos P2P de texto (transportador PeerJS simulado)', () => {
     await wait(() => one.snapshot().messages.length === 1);
     expect(one.snapshot().messages[0].author).toBe('Dois');
     host.session.stop();
-    await wait(() => one.snapshot().phase === 'error' && two.snapshot().phase === 'error');
+    await wait(() => one.snapshot().phase === 'reconnecting' && two.snapshot().phase === 'reconnecting');
+    await wait(() => one.snapshot().phase === 'error' && two.snapshot().phase === 'error', 6500);
     one.session.stop();
     two.session.stop();
   });
@@ -145,11 +146,28 @@ describe('fluxos P2P de texto (transportador PeerJS simulado)', () => {
     guests.forEach(g => g.session.stop());
   });
 
+  it('reconecta quando o anfitrião reaparece usando o mesmo código', async () => {
+    const oldHost = make('Host antigo'), guest = make('Amigo');
+    oldHost.session.startHosting(CODE);
+    await wait(() => oldHost.snapshot().phase === 'connected');
+    guest.session.startJoining(CODE);
+    await wait(() => guest.snapshot().phase === 'connected');
+    oldHost.session.stop();
+    await wait(() => guest.snapshot().phase === 'reconnecting');
+    const newHost = make('Novo host');
+    newHost.session.startHosting(CODE);
+    await wait(() => newHost.snapshot().phase === 'connected');
+    await wait(() => guest.snapshot().phase === 'connected', 6000);
+    expect(guest.snapshot().members[0].name).toBe('Novo host');
+    newHost.session.stop();
+    guest.session.stop();
+  });
+
   it('informa erro quando anfitrião não existe', async () => {
     const guest = make('Sem anfitrião');
     guest.session.startJoining(CODE);
-    await wait(() => guest.snapshot().phase === 'error');
-    expect(guest.snapshot().error).toContain('Sala não encontrada');
+    await wait(() => guest.snapshot().phase === 'error', 6500);
+    expect(guest.snapshot().error).toContain('Não foi possível restabelecer');
     guest.session.stop();
   });
 });

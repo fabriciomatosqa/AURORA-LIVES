@@ -1,11 +1,12 @@
 import { Peer, type DataConnection, type MediaConnection } from 'peerjs';
+import { capturePreset, emptyMetrics, summarizeRTCStats, type QualityMode, type NetworkMetrics } from './quality';
 import {
   ROOM_CAPACITY, cleanName, cleanText, decodeWire, generateRoomCode,
   hostPeerId, mergeMessages, normalizeRoomCode,
   type ChatMessage, type Member, type Wire,
 } from './protocol';
 
-export type Phase = 'idle' | 'connecting' | 'connected' | 'error';
+export type Phase = 'idle' | 'connecting' | 'reconnecting' | 'connected' | 'error';
 export type Role = 'host' | 'guest' | null;
 export type MediaKind = 'microphone' | 'screen';
 export type RemoteMedia = { id: string; peerId: string; kind: MediaKind; stream: MediaStream };
@@ -20,13 +21,17 @@ export type RoomSnapshot = {
   microphone: boolean;
   screen: boolean;
   localScreen: MediaStream | null;
+  qualityMode: QualityMode;
+  metrics: NetworkMetrics;
+  reconnectAttempts: number;
   warning: string;
   error: string;
 };
 export const emptyRoom: RoomSnapshot = {
   phase: 'idle', role: null, code: '', localId: '', members: [],
   messages: [], remoteMedia: [], microphone: false, screen: false,
-  localScreen: null, warning: '', error: '',
+  localScreen: null, qualityMode: 'auto', metrics: { ...emptyMetrics }, reconnectAttempts: 0,
+  warning: '', error: '',
 };
 
 /**
@@ -46,6 +51,9 @@ export class RoomSession {
   private localMic: MediaStream | null = null;
   private localDisplay: MediaStream | null = null;
   private joiningTimeout: ReturnType<typeof setTimeout> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private statsTimer: ReturnType<typeof setInterval> | null = null;
+  private retries = 0;
   private stopped = false;
   private releasing = false;
   private waitingMic = false;
@@ -75,6 +83,8 @@ export class RoomSession {
   }
 
   private clearTimeout(): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
     if (this.joiningTimeout) clearTimeout(this.joiningTimeout);
     this.joiningTimeout = null;
   }
@@ -83,6 +93,8 @@ export class RoomSession {
     if (this.releasing) return;
     this.releasing = true;
     this.clearTimeout();
+    if (this.statsTimer) clearInterval(this.statsTimer);
+    this.statsTimer = null;
     this.localMic?.getTracks().forEach(track => track.stop());
     this.localDisplay?.getTracks().forEach(track => track.stop());
     this.localMic = null;
@@ -121,7 +133,8 @@ export class RoomSession {
   private start(role: 'host' | 'guest', code: string): void {
     const normalized = normalizeRoomCode(code);
     if (!normalized) { this.fail('Código inválido. Digite os 16 caracteres do convite.'); return; }
-    this.emit({ phase: 'connecting', role, code: normalized, error: '', warning: '' });
+    this.retries = 0;
+    this.emit({ phase: 'connecting', role, code: normalized, error: '', warning: '', reconnectAttempts: 0 });
     // No TURN credentials or paid infrastructure. ICE can fail on restrictive NATs.
     const options = {
       host: '0.peerjs.com',
@@ -142,7 +155,8 @@ export class RoomSession {
           members: [{ id, name: this.name, host: true }],
           warning: 'A sala existe apenas enquanto o anfitrião permanece conectado.',
         });
-      } else if (!this.hostLink?.open) {
+        this.startStats();
+      } else if (!this.hostLink?.open && !this.reconnectTimer) {
         this.joinHost(id);
       }
     });
@@ -153,6 +167,11 @@ export class RoomSession {
     peer.on('call', call => this.onIncomingCall(call));
     peer.on('error', err => {
       if (this.stopped || this.peer !== peer) return;
+      if (err.type === 'peer-unavailable' && role === 'guest'
+          && (this.value.phase === 'connecting' || this.value.phase === 'reconnecting')) {
+        this.queueReconnect('O anfitrião não respondeu.');
+        return;
+      }
       const reason = err.type === 'unavailable-id'
         ? 'O código já está sendo usado. Crie outra sala.'
         : err.type === 'peer-unavailable'
@@ -169,12 +188,13 @@ export class RoomSession {
 
   private joinHost(localId: string): void {
     const peer = this.peer;
-    if (!peer) return;
+    if (!peer || this.stopped || this.releasing) return;
+    this.clearTimeout();
     const link = peer.connect(hostPeerId(this.value.code), { reliable: true, serialization: 'json' });
     this.hostLink = link;
     this.joiningTimeout = setTimeout(() => {
-      if (this.value.phase === 'connecting') {
-        this.fail('Tempo de conexão esgotado. O anfitrião pode estar offline ou a rede bloqueia o P2P.');
+      if (this.value.phase === 'connecting' || this.value.phase === 'reconnecting') {
+        this.queueReconnect('A conexão não respondeu a tempo.');
       }
     }, 20000);
     link.on('open', () => {
@@ -194,13 +214,15 @@ export class RoomSession {
           && wire.members.some(m => m.id === link.peer && m.host);
         if (!valid) { this.fail('Resposta inválida do anfitrião.'); return; }
         this.clearTimeout();
+        this.retries = 0;
         this.emit({
           phase: 'connected', members: wire.members,
-          messages: mergeMessages([], wire.messages),
-          error: '', warning: 'Conexão direta estabelecida. Sem histórico permanente.',
+          messages: mergeMessages(this.value.messages, wire.messages),
+          reconnectAttempts: 0, error: '', warning: 'Conexão direta estabelecida. Sem histórico permanente.',
         });
         link.send({ type: 'ready' } satisfies Wire);
         this.syncMediaTargets();
+        this.startStats();
       } else if (wire.type === 'members' && this.value.phase === 'connected') {
         if (wire.members.some(m => m.id === localId)) this.updateMembers(wire.members);
       } else if (wire.type === 'chat' && this.value.phase === 'connected') {
@@ -209,12 +231,83 @@ export class RoomSession {
     });
     link.on('close', () => {
       if (!this.stopped && !this.releasing && this.hostLink === link) {
-        this.fail('O anfitrião saiu ou a conexão direta foi encerrada.');
+        this.queueReconnect('O anfitrião saiu ou a conexão foi interrompida.');
       }
     });
     link.on('error', () => {
-      if (!this.stopped && !this.releasing && this.hostLink === link) this.fail('Falha no canal de dados P2P.');
+      if (!this.stopped && !this.releasing && this.hostLink === link) this.queueReconnect('Falha no canal de dados P2P.');
     });
+  }
+
+  private queueReconnect(reason: string): void {
+    if (this.stopped || this.releasing || this.value.role !== 'guest') return;
+    if (this.reconnectTimer) return;
+    if (this.retries >= 3) {
+      this.fail('Não foi possível restabelecer a conexão. O anfitrião pode ter saído ou sua rede pode bloquear conexões diretas.');
+      return;
+    }
+    this.clearTimeout();
+    this.retries += 1;
+    const current = this.hostLink;
+    this.hostLink = null;
+    current?.close();
+    for (const call of this.mediaCalls.values()) call.close();
+    this.mediaCalls.clear();
+    this.emit({
+      phase: 'reconnecting', reconnectAttempts: this.retries,
+      remoteMedia: [], warning: reason + ' Tentativa de reconexão ' + this.retries + '/3.',
+    });
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.peer && !this.stopped) this.joinHost(this.value.localId);
+    }, this.retries * 600);
+  }
+
+  private startStats(): void {
+    if (this.statsTimer) return;
+    // Stats are sampled locally, never uploaded or stored.
+    this.statsTimer = setInterval(() => void this.updateStats(), 3000);
+    void this.updateStats();
+  }
+
+  private async updateStats(): Promise<void> {
+    if (this.stopped || this.releasing || this.value.phase !== 'connected') return;
+    const link = this.hostLink?.open ? this.hostLink : [...this.connections.values()].find(c => c.open);
+    const connection = link?.peerConnection;
+    if (!connection) {
+      this.emit({ metrics: { ...emptyMetrics } });
+      return;
+    }
+    try {
+      const stats = await connection.getStats();
+      if (this.stopped || this.value.phase !== 'connected') return;
+      this.emit({ metrics: summarizeRTCStats(stats, connection.connectionState, this.localDisplay?.getVideoTracks()[0]) });
+    } catch {
+      this.emit({ metrics: { ...emptyMetrics } });
+    }
+  }
+
+  /** Change future capture quality and, if possible, an active capture track. */
+  async setQuality(mode: QualityMode): Promise<void> {
+    this.emit({ qualityMode: mode });
+    const track = this.localDisplay?.getVideoTracks()[0];
+    if (!track) return;
+    const preset = capturePreset(mode, this.value.members.length);
+    try {
+      await track.applyConstraints({
+        width: { ideal: preset.width }, height: { ideal: preset.height },
+        frameRate: { ideal: preset.fps, max: preset.fps },
+      });
+      this.emit({ warning: 'Perfil solicitado: ' + preset.name + '. A qualidade real depende do sistema e da rede.' });
+      void this.updateStats();
+    } catch {
+      this.emit({ warning: 'O sistema não aceitou este perfil. Mantida a captura disponível.' });
+    }
+  }
+
+  private adjustAutoQuality(): void {
+    if (this.value.qualityMode !== 'auto' || !this.localDisplay) return;
+    void this.setQuality('auto');
   }
 
   private onGuestLink(link: DataConnection): void {
@@ -246,6 +339,7 @@ export class RoomSession {
         this.emit({ members });
         link.send({ type: 'welcome', version: 1, members, messages: this.value.messages } satisfies Wire);
         this.broadcastMembers();
+        this.adjustAutoQuality();
         // Wait for guest's ready acknowledgement before attempting media calls.
         return;
       }
@@ -264,6 +358,7 @@ export class RoomSession {
     this.removeMediaFor(link.peer);
     this.emit({ members: this.value.members.filter(m => m.id !== link.peer) });
     this.broadcastMembers();
+    this.adjustAutoQuality();
   }
 
   private broadcastMembers(): void {
@@ -277,6 +372,7 @@ export class RoomSession {
     for (const id of previousIDs) if (!nextIDs.has(id)) this.removeMediaFor(id);
     this.emit({ members: next });
     this.syncMediaTargets();
+    this.adjustAutoQuality();
   }
 
   private addHostMessage(senderId: string, text: string): void {
@@ -415,10 +511,23 @@ export class RoomSession {
       if (!navigator.mediaDevices?.getDisplayMedia) {
         throw new Error('Compartilhar tela não é suportado pelo mecanismo de vídeo deste sistema.');
       }
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
+      const preset = capturePreset(this.value.qualityMode, this.value.members.length);
+      const options: DisplayMediaStreamOptions = {
+        video: { width: { ideal: preset.width }, height: { ideal: preset.height }, frameRate: { ideal: preset.fps, max: preset.fps } },
         audio: true,
-      });
+      };
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia(options);
+      } catch (error) {
+        // Some webviews expose display capture but cannot capture system audio.
+        // Never retry automatically after a user explicitly denies permission.
+        if (error instanceof DOMException && (error.name === 'NotSupportedError' || error.name === 'TypeError')) {
+          stream = await navigator.mediaDevices.getDisplayMedia({ ...options, audio: false });
+        } else {
+          throw error;
+        }
+      }
       if (this.stopped || this.value.phase !== 'connected') {
         stream.getTracks().forEach(track => track.stop());
         return;
@@ -433,6 +542,7 @@ export class RoomSession {
           : 'Tela iniciada sem áudio do sistema; o suporte varia entre Windows e Linux.',
       });
       this.syncMediaTargets();
+      void this.updateStats();
     } finally { this.waitingDisplay = false; }
   }
 
