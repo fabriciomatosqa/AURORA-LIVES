@@ -1,61 +1,54 @@
 # AURORA LIVES
 
-**Versão de desenvolvimento: 0.0.1**
+**Versão de desenvolvimento 0.0.2 — salas P2P sem mensalidade**
 
-Aplicativo de comunicação desktop para **Windows e Linux**, inspirado nos fluxos de comunidades e salas de texto/voz do Discord, com identidade própria da marca AURORA.
+AURORA LIVES é um aplicativo para Windows e Linux com a identidade cristalina da marca AURORA. **Todos usam o mesmo instalador:** qualquer participante pode criar uma sala, entrar por convite, conversar, ativar o microfone ou compartilhar sua tela.
 
-> **Estado atual:** fundação em implementação. O chat local de desenvolvimento não possui contas, autenticação, persistência ou permissões. **Não exponha o backend à internet.** Voz, vídeo e streaming 1080p60 ainda não estão implementados.
+## Como conectar dois computadores pela internet
 
-## Arquitetura proposta
+1. Instale o mesmo AURORA LIVES em cada computador.
+2. No primeiro, clique em **Criar sala** e copie o código privado de 16 caracteres.
+3. Envie o código ao outro participante por um canal de sua preferência.
+4. No segundo computador, abra **Entrar em uma sala**, informe o código e clique em **Entrar na sala**.
+5. A conexão ocorre por **WebRTC**, sem cadastro. Mensagens trafegam por um canal de dados P2P. Ambos podem tentar compartilhar microfone e tela.
 
-- Desktop: Tauri 2 + React + TypeScript.
-- Backend: Go.
-- Mídia (próximas etapas): WebRTC + LiveKit autogerenciado (SFU).
-- Banco de dados (próximas etapas): PostgreSQL.
-- Instaladores de prévia: Windows (NSIS .exe) e Linux Ubuntu/Debian (.deb); **um único aplicativo** para transmissores e espectadores no futuro.
+Até **10 pessoas**, contando o anfitrião. **O anfitrião precisa permanecer conectado.** Não há histórico permanente nem moderação/autenticação; **qualquer pessoa com o código pode entrar**.
 
-## Iniciar o ambiente de desenvolvimento
+## Infraestrutura e limitações importantes
 
-Necessário: Go 1.23+, Node.js 22+ e npm. Para abrir a janela nativa, instalar também [pré-requisitos do Tauri 2](https://v2.tauri.app/start/prerequisites/).
+**Sem servidor pago não significa ausência absoluta de infraestrutura.**
 
-Terminal 1:
+- O projeto utiliza o serviço público **PeerJS Cloud** (gratuito) para **sinalização**: os participantes se encontram e trocam os parâmetros para estabelecer a conexão. Não armazena mensagens ou mídia.
+- Um servidor **STUN público** ajuda a atravessar roteadores e NAT. Não há servidor TURN configurado.
+- **A comunicação ocorre diretamente entre computadores** quando a rede permite. Redes com CGNAT/NAT simétrico ou firewalls rigorosos podem impedir a conexão; nesses casos será necessário um retransmissor TURN (que gera custo) ou mudar de rede.
+- As mensagens dos convidados passam pelo computador do anfitrião, que as retransmite aos demais por canais WebRTC.
+- Áudio e compartilhamento de tela são **experimentais**, feitos diretamente em malha (um stream enviado a cada espectador). Em grupos de 5–10 pessoas isso pode exigir muito upload. **1080p60 é uma meta, não qualidade verificada**.
+- A captura de tela e áudio depende do WebView do sistema: **Windows usa WebView2; Linux usa WebKitGTK**. A compatibilidade real dessas capturas ainda precisa de testes em máquinas físicas.
+- Não existe identificação persistente de usuário, criptografia ponta a ponta com verificação de identidade, bloqueio de convidados ou transferência de arquivos.
+- Os instaladores de prévia não estão assinados.
 
-```bash
-cd services/api
-go run ./cmd/aurora-api
-```
+O backend Go anterior permanece em `services/api/` para referência e testes legados, mas **não integra o instalador e não é necessário para o P2P**.
 
-Terminal 2:
+## Testes e desenvolvimento
+
+Requisitos: Node.js 22+, npm e pré-requisitos do [Tauri 2](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
 cd apps/desktop
 npm install
+npm run test
+npm run build
 npm run dev
+# janela nativa
+npm run dev:native
+# gerar instalador local
+npm run package:desktop
 ```
 
-Abrir http://localhost:1420 para experimentar a interface. Para abrir o aplicativo nativo **com a API local integrada**, use `npm run dev:native` dentro de `apps/desktop` (exige Go e Rust para compilar). Os instaladores gerados já incluem a API local e não exigem Go ou Node no computador de destino.
+Os workflows do GitHub compilam frontend e desktop para Windows e Linux. A compilação não substitui o teste real de conexões P2P entre diferentes redes.
 
-**Atenção:** a prévia instalada funciona como chat local de demonstração. A instalação é igual para todos, mas ainda **não conecta pessoas em computadores diferentes**: isso exigirá a infraestrutura comum de autenticação, sinalização e SFU planejada. Ninguém precisará instalar um aplicativo separado de servidor para compartilhar ou assistir no produto final.
+## Segurança
 
-O serviço de desenvolvimento escuta por padrão **127.0.0.1:8787**. O chat funciona apenas no mesmo computador; dados são mantidos em memória e perdidos ao reiniciar. Ainda não é seguro nem apropriado para hospedar publicamente. O nome de usuário é apenas um apelido local, não identidade verificada.
+O convite é um segredo temporário gerado aleatoriamente. **Não o publique.** Fechar a janela do anfitrião encerra a sala e as mensagens não são guardadas. O serviço gratuito de sinalização é mantido por terceiros e pode ficar indisponível ou limitar tráfego; não deve ser assumido como infraestrutura garantida para o público em geral.
 
-## Testes
-
-```bash
-cd services/api && go test ./...
-cd ../../apps/desktop && npm install && npm run build
-```
-
-## Marca
-
-A identidade oficial é o **emblema cristalino triangular AURORA**. Não redesenhar nem substituir. O repositório deve conter um derivado reduzido para a interface e, quando houver mecanismo de transferência binária disponível, a imagem original em alta resolução.
-
-## Próximos marcos
-
-1. Auth real e PostgreSQL com migrações.
-2. Spaces/canais/convites com permissões.
-3. VoIP via LiveKit (microfone, dispositivos).
-4. Compartilhamento de tela, áudio do sistema, vídeo e otimização para 1080p60.
-5. Assinatura dos instaladores e atualização integrada (os pacotes desta prévia ainda **não são assinados**).
-
-Consulte [docs/architecture.md](docs/architecture.md) para decisões técnicas e limitações.
+Consulte [docs/architecture.md](docs/architecture.md) para arquitetura e limitações, e as Issues do GitHub para evolução.

@@ -1,6 +1,6 @@
 [package]
 name = "aurora-lives"
-version = "0.0.1"
+version = "0.0.2"
 description = "AURORA LIVES desktop"
 authors = ["AURORA"]
 edition = "2021"
@@ -10,4 +10,3 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-shell = "2"

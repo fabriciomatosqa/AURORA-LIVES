@@ -1,57 +1,314 @@
-import {useCallback,useEffect,useRef,useState,type FormEvent} from 'react';
-import {Activity,ArrowRight,Bell,ChevronDown,Hash,Headphones,Home,MessageCircle,Mic,MonitorUp,Plus,RadioTower,Send,Settings,ShieldCheck,Sparkles,Volume2,Wifi,WifiOff,X} from 'lucide-react';
-import {addRoom,health,history,publish,rooms,stream,type Message,type Room} from './api';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import {
+  Activity, ArrowRight, Check, ChevronDown, Copy, Hash,
+  Headphones, Home, Info, Link2, LockKeyhole, MessageCircle, Mic, MicOff,
+  MonitorUp, Moon, Plus, RadioTower, Send, Settings, ShieldCheck,
+  Sparkles, Sun, Users, VideoOff, Wifi, X,
+} from 'lucide-react';
+import { RoomSession, emptyRoom, type RemoteMedia, type RoomSnapshot } from './p2p/session';
+import { cleanName, formatRoomCode, normalizeRoomCode } from './p2p/protocol';
+import './p2p.css';
 
-function saved(key:string,fallback:string){try{return localStorage.getItem(key)||fallback}catch{return fallback}}
-function ordered(previous:Message[],added:Message[]){const known=new Map<string,Message>();[...previous,...added].forEach(m=>known.set(m.id,m));return [...known.values()].sort((a,b)=>a.createdAt.localeCompare(b.createdAt))}
-function Crystal({size=42}:{size?:number}){return <img src="/aurora-mark.webp" alt="Logo cristalina AURORA" className="crystal" width={size} height={size}/>}
+function fromStorage(key: string, fallback: string): string {
+  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+}
+function Crystal({ size = 42 }: { size?: number }) {
+  return <img className="crystal" src="/aurora-mark.webp" alt="Emblema cristalino AURORA" width={size} height={size} />;
+}
+function StreamVideo({ stream, muted, label }: { stream: MediaStream; muted: boolean; label: string }) {
+  const element = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (!element.current) return;
+    element.current.srcObject = stream;
+    void element.current.play().catch(() => { /* user can press Play */ });
+    return () => { if (element.current) element.current.srcObject = null; };
+  }, [stream]);
+  return <div className="video-card">
+    <video ref={element} autoPlay playsInline muted={muted} controls aria-label={label}/>
+    <span className="video-label"><MonitorUp size={14}/> {label}</span>
+  </div>;
+}
+function RemoteAudio({ media, name }: { media: RemoteMedia; name: string }) {
+  const element = useRef<HTMLAudioElement>(null);
+  useEffect(() => {
+    if (!element.current) return;
+    element.current.srcObject = media.stream;
+    void element.current.play().catch(() => { /* controls allow user start */ });
+    return () => { if (element.current) element.current.srcObject = null; };
+  }, [media.stream]);
+  return <div className="audio-card">
+    <span className="audio-avatar">{name.slice(0, 1).toUpperCase()}</span>
+    <div><strong>{name}</strong><small>Áudio recebido</small></div>
+    <audio autoPlay controls ref={element} aria-label={'Áudio de ' + name}/>
+  </div>;
+}
+export default function App() {
+  const [room, setRoom] = useState<RoomSnapshot>(emptyRoom);
+  const [nickname, setNickname] = useState(() => fromStorage('aurora.nickname', 'Visitante'));
+  const [invite, setInvite] = useState('');
+  const [text, setText] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [settings, setSettings] = useState(false);
+  const [theme, setTheme] = useState(() => fromStorage('aurora.theme', 'dark'));
+  const [busyMedia, setBusyMedia] = useState(false);
+  const [membersExpanded, setMembersExpanded] = useState(true);
+  const session = useRef<RoomSession | null>(null);
+  const bottom = useRef<HTMLDivElement>(null);
+  const connected = room.phase === 'connected';
+  const host = room.role === 'host';
+  const remoteVideo = room.remoteMedia.filter(m => m.kind === 'screen');
+  const remoteAudio = room.remoteMedia.filter(m => m.kind === 'microphone');
 
-export default function App(){
- const [channels,setChannels]=useState<Room[]>([]);
- const [active,setActive]=useState('geral');
- const [items,setItems]=useState<Message[]>([]);
- const [online,setOnline]=useState(false);
- const [error,setError]=useState('');
- const [draft,setDraft]=useState('');
- const [busy,setBusy]=useState(false);
- const [creating,setCreating]=useState(false);
- const [newName,setNewName]=useState('');
- const [settings,setSettings]=useState(false);
- const [nickname,setNickname]=useState(()=>saved('aurora.nickname','Visitante'));
- const [theme,setTheme]=useState(()=>saved('aurora.theme','dark'));
- const bottom=useRef<HTMLDivElement>(null);
- const room=channels.find(c=>c.id===active);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('aurora.theme', theme); } catch { /* no storage */ }
+  }, [theme]);
+  useEffect(() => () => session.current?.stop(), []);
+  useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }); }, [room.messages]);
 
- useEffect(()=>{document.documentElement.dataset.theme=theme;try{localStorage.setItem('aurora.theme',theme)}catch{/* no localStorage */}},[theme]);
- const refresh=useCallback(async()=>{try{await health();const list=await rooms();setChannels(list);setOnline(true);setError('')}catch{setOnline(false);setError('API local desconectada. Inicie o servidor Go para conversar.')}},[]);
- useEffect(()=>{void refresh();const timer=setInterval(()=>void refresh(),5000);return ()=>clearInterval(timer)},[refresh]);
- useEffect(()=>{if(!online)return;let valid=true;setItems([]);void history(active).then(list=>{if(valid)setItems(prev=>ordered(prev,list))}).catch(()=>{if(valid)setError('Erro ao carregar mensagens.')});const source=stream(active);
- const handler=(e:Event)=>{try{const msg=JSON.parse((e as MessageEvent<string>).data) as Message;if(valid)setItems(prev=>ordered(prev,[msg]))}catch{/* ignore invalid event */}};
- source.addEventListener('message',handler);return ()=>{valid=false;source.removeEventListener('message',handler);source.close()}},[online,active]);
- useEffect(()=>bottom.current?.scrollIntoView({block:'end'}),[items]);
- async function send(e:FormEvent){e.preventDefault();if(!online||busy||!draft.trim())return;setBusy(true);try{const msg=await publish(active,nickname.trim()||'Visitante',draft.trim());setItems(prev=>ordered(prev,[msg]));setDraft('');setError('')}catch{setError('Falha ao enviar mensagem.')}finally{setBusy(false)}}
- async function create(e:FormEvent){e.preventDefault();if(!newName.trim())return;try{const result=await addRoom(newName.trim());setChannels(prev=>[...prev,result]);setActive(result.id);setNewName('');setCreating(false)}catch{setError('Não foi possível criar o canal.')}}
- function changeName(value:string){setNickname(value);try{localStorage.setItem('aurora.nickname',value)}catch{/* unavailable */}}
- return <div className="shell">
-  <nav className="rail" aria-label="Espaços"><button className="brand-square" title="Início" onClick={()=>setActive('geral')}><Crystal size={51}/></button><span className="separator"/><button className="rail-button chosen" onClick={()=>setActive('geral')} title="Início"><Home/></button><button className="rail-button" disabled title="Comunidades disponíveis em breve"><Plus/></button><div className="grow"/><button className="rail-button" onClick={()=>setSettings(true)} title="Configurações"><Settings/></button></nav>
-  <aside className="channels"><div className="brand-row"><div className="brand-tile"><Crystal size={31}/></div><div><strong>AURORA</strong><small>Comunidade de testes</small></div><ChevronDown size={16}/></div>
-   <div className="channel-scroll"><div className="section-title">ÁREA DE TRABALHO</div><button className="channel" onClick={()=>setActive('geral')}><Home size={17}/>Visão geral</button>
-    <div className="section-title section-split">CANAIS DE TEXTO <button title="Criar canal de texto" aria-label="Criar canal" disabled={!online} onClick={()=>setCreating(v=>!v)}><Plus size={17}/></button></div>
-    {channels.map(c=><button key={c.id} className={'channel '+(active===c.id?'selected':'')} onClick={()=>setActive(c.id)}><Hash size={18}/><span>{c.name}</span></button>)}
-    {creating&&<form className="create-room" onSubmit={e=>void create(e)}><label htmlFor="room-name">Novo canal</label><input id="room-name" value={newName} onChange={e=>setNewName(e.target.value)} maxLength={48} placeholder="Nome do canal" autoFocus/><div><button type="button" onClick={()=>setCreating(false)}>Cancelar</button><button type="submit" disabled={!newName.trim()}>Criar</button></div></form>}
-    <div className="section-title section-split">CANAIS DE VOZ <span className="coming-label">EM BREVE</span></div>
-    <button disabled title="Voz: próximo marco" className="channel"><Volume2 size={18}/>Sala de voz</button>
-    <button disabled title="WebRTC: próximo marco" className="channel"><RadioTower size={18}/>Compartilhar tela</button>
-   </div><div className="connection"><span className={'dot '+(online?'on':'')}/><div><strong>{online?'Servidor conectado':'Servidor desconectado'}</strong><small>Ambiente local • v0.0.1</small></div>{online?<Wifi size={16}/>:<WifiOff size={16}/>}</div>
-   <div className="account"><div className="avatar">{nickname.trim().charAt(0).toUpperCase()||'V'}</div><div><strong>{nickname||'Visitante'}</strong><small>Perfil de teste</small></div><button onClick={()=>setSettings(true)} aria-label="Configurações"><Settings size={19}/></button></div>
-  </aside>
-  <main className="main"><header className="topbar"><Hash className="teal" size={23}/><div><strong>{room?.name||'geral'}</strong><small>Um espaço para boas conversas</small></div><span className="flex-grow"/><span className="version"><span className="dot on"/> PRÉVIA 0.0.1</span><button disabled title="Notificações em breve"><Bell size={19}/></button></header>
-   <div className="timeline"><div className="welcome"><div className="welcome-logo"><Crystal size={110}/></div><div className="eyebrow">✦ &nbsp; O FUTURO DA SUA COMUNIDADE</div><h1>Conexões que <em>brilham.</em></h1><p>Bem-vindo ao <strong>AURORA LIVES</strong>. Um novo espaço para criar, conversar e compartilhar experiências com quem importa.</p>
-    <div className="highlights"><div className="highlight"><span className="highlight-icon cyan"><MessageCircle size={19}/></span><div><strong>Conversas em tempo real</strong><small>Disponível nesta prévia local</small></div><ArrowRight size={16}/></div><div className="highlight future"><span className="highlight-icon purple"><Headphones size={19}/></span><div><strong>Voz e chamadas</strong><small>Em desenvolvimento</small></div></div><div className="highlight future"><span className="highlight-icon blue"><MonitorUp size={19}/></span><div><strong>Lives em 1080p60</strong><small>Meta para próxima etapa</small></div></div></div><div className="division"/><div className="chat-begin"><Hash size={16}/>Início da conversa em <strong>#{room?.name||'geral'}</strong></div>
-   </div><div className="messages" role="log">{items.map(m=><article className="message" key={m.id}><div className="avatar">{m.author.charAt(0).toUpperCase()}</div><div><header><strong>{m.author}</strong><time dateTime={m.createdAt}>{new Date(m.createdAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time></header><p>{m.text}</p></div></article>)}<div ref={bottom}/></div></div>
-   <div className="write-area">{error&&<div role="alert" className="error"><WifiOff size={16}/>{error}<button onClick={()=>void refresh()}>Reconectar</button></div>}<form className="write" onSubmit={e=>void send(e)}><button disabled title="Anexos em breve"><Plus size={20}/></button><label htmlFor="composer" className="sr-only">Mensagem</label><textarea id="composer" rows={1} maxLength={2000} value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();e.currentTarget.form?.requestSubmit()}}} placeholder={online?'Enviar mensagem para #'+(room?.name||'geral'):'Conecte o servidor para conversar'} disabled={!online}/><button className="send" title="Enviar" aria-label="Enviar" disabled={!online||!draft.trim()||busy} type="submit"><Send size={18}/></button></form><small><ShieldCheck size={13}/> Prévia local: mensagens não são persistidas</small></div>
-  </main>
-  <aside className="right"><header><Activity size={19}/><strong>Central Aurora</strong></header><div className="right-cover"><Crystal size={100}/></div><div className="right-copy"><span className="eyebrow">SUA NOVA EXPERIÊNCIA</span><h2>O seu espaço.<br/><em>Suas conexões.</em></h2><p>Estamos construindo algo especial. Esta é a primeira fundação do AURORA LIVES.</p><div className="division"/><div className="metric"><span><MessageCircle size={17}/>Chat local</span><strong className="ready">Disponível</strong></div><div className="metric"><span><Mic size={17}/>Áudio e vídeo</span><strong>Planejado</strong></div><div className="metric"><span><MonitorUp size={17}/>Compartilhamento</span><strong>Planejado</strong></div></div><footer><Sparkles size={17}/> Feito para conectar pessoas.</footer></aside>
-  {settings&&<div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)setSettings(false)}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title"><header><div><span className="eyebrow">PREFERÊNCIAS</span><h2 id="settings-title">Configurações</h2></div><button aria-label="Fechar" onClick={()=>setSettings(false)}><X/></button></header><label htmlFor="nickname">Apelido neste computador</label><input id="nickname" maxLength={32} value={nickname} onChange={e=>changeName(e.target.value)}/><label>Aparência</label><div className="themes"><button className={theme==='dark'?'active':''} onClick={()=>setTheme('dark')}>Escuro</button><button className={theme==='light'?'active':''} onClick={()=>setTheme('light')}>Claro</button></div><p className="notice"><ShieldCheck size={17}/> Ainda não existem contas. Seu apelido é local e não comprova identidade.</p><button className="done" onClick={()=>setSettings(false)}>Concluído <ArrowRight size={17}/></button></section></div>}
- </div>
+  function openRoom(mode: 'host' | 'guest') {
+    if (typeof window.RTCPeerConnection === 'undefined') {
+      setFeedback('Este sistema não disponibiliza WebRTC. Tente outro ambiente.');
+      return;
+    }
+    setFeedback('');
+    setCopied(false);
+    const code = mode === 'host' ? RoomSession.newCode() : normalizeRoomCode(invite);
+    if (!code) { setFeedback('Informe o código de 16 caracteres recebido do anfitrião.'); return; }
+    session.current?.stop();
+    const current = new RoomSession(cleanName(nickname), next => setRoom(next));
+    session.current = current;
+    if (mode === 'host') current.startHosting(code);
+    else current.startJoining(code);
+  }
+
+  function leave() {
+    session.current?.stop();
+    session.current = null;
+    setRoom({ ...emptyRoom });
+    setText('');
+    setFeedback('');
+  }
+
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(formatRoomCode(room.code));
+      setCopied(true);
+      setFeedback('Código copiado. Envie-o somente a quem você deseja convidar.');
+    } catch {
+      setFeedback('Não foi possível copiar automaticamente. Selecione o código exibido e copie.');
+    }
+  }
+
+  function sendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (session.current?.send(text)) {
+      setText('');
+      setFeedback('');
+    } else if (text.trim()) setFeedback('Não foi possível enviar. Verifique a conexão P2P.');
+  }
+
+  async function toggleMicrophone() {
+    setBusyMedia(true); setFeedback('');
+    try {
+      if (room.microphone) session.current?.disableMicrophone();
+      else await session.current?.enableMicrophone();
+    } catch (e) {
+      setFeedback('Microfone indisponível: ' + (e instanceof Error ? e.message : 'verifique as permissões.'));
+    } finally { setBusyMedia(false); }
+  }
+
+  async function toggleDisplay() {
+    setBusyMedia(true); setFeedback('');
+    try {
+      if (room.screen) session.current?.stopScreen();
+      else await session.current?.shareScreen();
+    } catch (e) {
+      setFeedback('Não foi possível compartilhar: ' + (e instanceof Error ? e.message : 'verifique as permissões.'));
+    } finally { setBusyMedia(false); }
+  }
+
+  function updateNickname(value: string) {
+    setNickname(value);
+    try { localStorage.setItem('aurora.nickname', value); } catch { /* no storage */ }
+  }
+
+  const nameOf = (peerId: string) => room.members.find(m => m.id === peerId)?.name || 'Participante';
+
+  return <div className="shell p2p-shell">
+    <nav className="rail" aria-label="AURORA LIVES">
+      <button className="brand-square" title="Início" onClick={() => connected ? undefined : setFeedback('')}><Crystal size={51}/></button>
+      <span className="separator"/>
+      <button className="rail-button chosen" title="Conexões" aria-label="Conexões"><Home size={22}/></button>
+      <button className="rail-button" disabled title="Comunidades públicas em breve"><Plus size={22}/></button>
+      <div className="grow"/>
+      <button className="rail-button" onClick={() => setSettings(true)} title="Configurações"><Settings size={21}/></button>
+    </nav>
+
+    <aside className="channels">
+      <div className="brand-row">
+        <div className="brand-tile"><Crystal size={31}/></div>
+        <div><strong>AURORA</strong><small>LIVES • Conexão direta</small></div>
+        <ChevronDown size={16}/>
+      </div>
+      <div className="channel-scroll">
+        <div className="section-title">MEU ESPAÇO</div>
+        <div className="channel selected"><Home size={18}/><span>{connected ? 'Encontro privado' : 'Início'}</span></div>
+        <div className="section-title section-split">CANAIS DE COMUNICAÇÃO</div>
+        <div className="channel selected"><Hash size={18}/><span>conversa-p2p</span></div>
+        <div className="channel"><RadioTower size={18}/><span>voz e transmissão</span></div>
+        <div className="section-title section-split">PARTICIPANTES <span className="coming-label">{room.members.length}/{10}</span></div>
+        {room.members.map(m => <div className="participant" key={m.id}>
+          <div className="avatar">{m.name.slice(0, 1).toUpperCase()}</div>
+          <span>{m.name}{m.id === room.localId ? ' (você)' : ''}</span>
+          {m.host && <span title="Anfitrião">★</span>}
+        </div>)}
+        {!connected && <p className="nav-help">Crie uma sala ou use um convite para conversar pela internet, sem cadastro.</p>}
+      </div>
+      <div className="connection">
+        <span className={'dot ' + (connected ? 'on' : '')}/>
+        <div><strong>{connected ? 'Conexão P2P ativa' : room.phase === 'connecting' ? 'Conectando...' : 'Sem sala ativa'}</strong><small>WebRTC • Sem servidor pago</small></div>
+        <Wifi size={16}/>
+      </div>
+      <div className="account">
+        <div className="avatar">{cleanName(nickname).slice(0, 1).toUpperCase()}</div>
+        <div><strong>{cleanName(nickname)}</strong><small>Sem conta • Visitante</small></div>
+        <button onClick={() => setSettings(true)} aria-label="Configurações"><Settings size={19}/></button>
+      </div>
+    </aside>
+
+    <main className="main p2p-main">
+      <header className="topbar">
+        <Hash className="teal" size={23}/>
+        <div><strong>{connected ? 'sala-privada' : 'boas-vindas'}</strong><small>{connected ? 'Mensagens e mídia diretamente entre os participantes' : 'Crie ou entre em uma sala de comunicação'}</small></div>
+        <span className="flex-grow"/>
+        <span className="version"><span className={'dot ' + (connected ? 'on' : '')}/> PRÉVIA 0.0.2</span>
+      </header>
+
+      {(room.phase === 'idle' || room.phase === 'error') && <section className="p2p-lobby">
+        <div className="welcome-logo"><Crystal size={111}/></div>
+        <div className="eyebrow">✦ &nbsp; SUA CONEXÃO, SEU ESPAÇO</div>
+        <h1>Conexões que <em>brilham.</em></h1>
+        <p>Crie uma sala privada e compartilhe o código com seus amigos. Todos usam o mesmo AURORA LIVES — sem cadastro e sem contratar servidor.</p>
+        <div className="lobby-panels">
+          <div className="lobby-panel">
+            <div className="panel-symbol"><Sparkles size={24}/></div>
+            <h2>Criar um encontro</h2>
+            <p>Abra uma nova sala e convide até 9 pessoas. O encontro funciona enquanto você estiver conectado.</p>
+            <button className="primary-action" onClick={() => openRoom('host')}><Plus size={19}/> Criar sala <ArrowRight size={17}/></button>
+          </div>
+          <div className="lobby-panel">
+            <div className="panel-symbol violet"><Link2 size={24}/></div>
+            <h2>Entrar em uma sala</h2>
+            <p>Recebeu um código? Digite aqui para conectar-se diretamente ao anfitrião.</p>
+            <label htmlFor="room-invite">Código do convite</label>
+            <input id="room-invite" value={invite} maxLength={23} onChange={e => setInvite(e.target.value.toUpperCase())}
+              placeholder="ABCD-EFGH-JKLM-NPQR" autoComplete="off" spellCheck={false}/>
+            <button className="secondary-action" onClick={() => openRoom('guest')} disabled={!normalizeRoomCode(invite)}>Entrar na sala <ArrowRight size={17}/></button>
+          </div>
+        </div>
+        <p className="connection-note"><ShieldCheck size={16}/> Dados por WebRTC. O serviço gratuito PeerJS apenas apresenta os usuários; conexões restritivas podem precisar de TURN.</p>
+      </section>}
+
+      {room.phase === 'connecting' && <section className="p2p-wait">
+        <div className="loading-orb"><Crystal size={92}/></div>
+        <h2>{host ? 'Preparando seu encontro...' : 'Procurando a sala...'}</h2>
+        <p>Conectando ao serviço gratuito de sinalização e negociando o canal direto.</p>
+        <button className="secondary-action" onClick={leave}>Cancelar</button>
+      </section>}
+
+      {connected && <>
+        <div className="room-identity">
+          <div className="room-id-info"><LockKeyhole size={17}/><div><small>CONVITE PRIVADO</small><strong>{formatRoomCode(room.code)}</strong></div></div>
+          <button onClick={() => void copyCode()} className="copy-code">{copied ? <Check size={17}/> : <Copy size={17}/>} {copied ? 'Copiado' : 'Copiar código'}</button>
+          <button className="leave-btn" onClick={leave}>Sair da sala <X size={16}/></button>
+        </div>
+        <div className="p2p-room-scroll">
+          <section className="media-panel">
+            <div className="media-heading"><div><span className="eyebrow">AO VIVO • WEBRTC</span><h2>Compartilhe o momento.</h2></div><span className="mini-pill"><Users size={15}/>{room.members.length} conectado(s)</span></div>
+            <div className="media-buttons">
+              <button className={'media-btn ' + (room.microphone ? 'is-active' : '')} onClick={() => void toggleMicrophone()} disabled={busyMedia}>{room.microphone ? <Mic size={18}/> : <MicOff size={18}/>}{room.microphone ? 'Desligar microfone' : 'Ativar microfone'}</button>
+              <button className={'media-btn ' + (room.screen ? 'is-active' : '')} onClick={() => void toggleDisplay()} disabled={busyMedia}>{room.screen ? <VideoOff size={18}/> : <MonitorUp size={18}/>}{room.screen ? 'Parar transmissão' : 'Compartilhar tela'}</button>
+            </div>
+            <div className="screen-wall">
+              {room.localScreen && <StreamVideo stream={room.localScreen} muted label="Sua transmissão"/>}
+              {remoteVideo.map(media => <StreamVideo key={media.id} stream={media.stream} muted={false} label={'Tela de ' + nameOf(media.peerId)}/>)}
+              {!room.localScreen && remoteVideo.length === 0 && <div className="empty-screen">
+                <div className="screen-icon"><MonitorUp size={35}/></div>
+                <strong>Nenhuma transmissão ativa</strong>
+                <span>Qualquer participante pode compartilhar a tela diretamente com os demais.</span>
+              </div>}
+            </div>
+            {remoteAudio.length > 0 && <div className="audio-list">
+              {remoteAudio.map(media => <RemoteAudio key={media.id} media={media} name={nameOf(media.peerId)}/>)}
+            </div>}
+            <p className="media-disclaimer">Compartilhamento em fase experimental: depende das permissões do sistema. Com 5–10 pessoas, o upload P2P pode limitar a resolução e o FPS.</p>
+          </section>
+
+          <section className="room-chat">
+            <div className="chat-header"><MessageCircle size={17}/><strong>Conversa em tempo real</strong><small>Mensagens apenas enquanto a sala está aberta</small></div>
+            {room.messages.length === 0 && <div className="no-messages">Envie a primeira mensagem para começar a conversa.</div>}
+            <div className="p2p-messages" role="log" aria-label="Mensagens da sala">
+              {room.messages.map(message => <article className="message" key={message.id}>
+                <div className="avatar">{message.author.charAt(0).toUpperCase()}</div>
+                <div><header><strong>{message.author}</strong><time dateTime={new Date(message.sentAt).toISOString()}>{new Date(message.sentAt).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time></header><p>{message.text}</p></div>
+              </article>)}
+              <div ref={bottom}/>
+            </div>
+          </section>
+        </div>
+        <div className="write-area">
+          <form className="write" onSubmit={sendMessage}>
+            <MessageCircle size={19} className="compose-icon"/>
+            <label htmlFor="composer" className="sr-only">Mensagem</label>
+            <textarea id="composer" rows={1} maxLength={2000} value={text}
+              onChange={e => setText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }}
+              placeholder="Enviar mensagem para a sala privada"/>
+            <button className="send" aria-label="Enviar mensagem" disabled={!text.trim()}><Send size={18}/></button>
+          </form>
+          <small><ShieldCheck size={13}/> Comunicação P2P • Sem histórico permanente • Sem necessidade de conta</small>
+        </div>
+      </>}
+
+      {(feedback || room.error || (connected && room.warning)) && <div className={'room-toast ' + (room.error || feedback ? 'toast-error' : '')} role="status">
+        <Info size={16}/><span>{room.error || feedback || room.warning}</span>
+        <button aria-label="Fechar aviso" onClick={() => { setFeedback(''); if (room.phase === 'error') leave(); }}><X size={16}/></button>
+      </div>}
+    </main>
+
+    <aside className="right p2p-side">
+      <header><Activity size={19}/><strong>Central Aurora</strong></header>
+      <div className="right-cover"><Crystal size={100}/></div>
+      <div className="right-copy">
+        <span className="eyebrow">CONEXÃO SEM MENSALIDADE</span>
+        <h2>Seu espaço.<br/><em>Sua liberdade.</em></h2>
+        <p>O serviço gratuito permite encontrar o outro computador. Texto, voz e tela são enviados diretamente por WebRTC quando a rede permite.</p>
+        <div className="division"/>
+        <div className="metric"><span><ShieldCheck size={17}/>Sala privada</span><strong className="ready">Por convite</strong></div>
+        <div className="metric"><span><Users size={17}/>Participantes</span><strong>{room.members.length}/10</strong></div>
+        <div className="metric"><span><Headphones size={17}/>Voz P2P</span><strong>Experimental</strong></div>
+        <div className="metric"><span><MonitorUp size={17}/>Transmissão</span><strong>Experimental</strong></div>
+        {connected && <div className="right-members">
+          <button onClick={() => setMembersExpanded(p => !p)}><Users size={16}/> Quem está na sala <ChevronDown size={16}/></button>
+          {membersExpanded && room.members.map(m => <div className="right-member" key={m.id}><span className="dot on"/>{m.name}{m.host && ' ★'}</div>)}
+        </div>}
+      </div>
+      <footer><Sparkles size={17}/> Feito para conectar pessoas.</footer>
+    </aside>
+
+    {settings && <div className="overlay" onMouseDown={e => { if (e.target === e.currentTarget) setSettings(false); }}>
+      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <header><div><span className="eyebrow">PREFERÊNCIAS</span><h2 id="settings-title">Configurações</h2></div><button onClick={() => setSettings(false)} aria-label="Fechar configurações"><X/></button></header>
+        <label htmlFor="nickname">Seu apelido (não é uma conta)</label>
+        <input id="nickname" maxLength={32} value={nickname} onChange={e => updateNickname(e.target.value)}/>
+        {connected && <p className="settings-help">A alteração de apelido será aplicada na próxima sala.</p>}
+        <label>Aparência</label>
+        <div className="themes"><button className={theme === 'dark' ? 'active' : ''} onClick={() => setTheme('dark')}><Moon size={16}/> Escuro</button><button className={theme === 'light' ? 'active' : ''} onClick={() => setTheme('light')}><Sun size={16}/> Claro</button></div>
+        <p className="notice"><LockKeyhole size={17}/> Não compartilhe o código publicamente: qualquer pessoa que o possua poderá entrar. A sala termina quando o anfitrião sai.</p>
+        <button className="done" onClick={() => setSettings(false)}>Concluído <ArrowRight size={17}/></button>
+      </section>
+    </div>}
+  </div>;
 }
