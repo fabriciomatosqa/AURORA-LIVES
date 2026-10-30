@@ -27,12 +27,12 @@ func TestHealthAndRooms(t *testing.T) {
 
 func TestCreateRoomAndMessages(t *testing.T) {
   h := New().Handler()
-  rr := request(t, h, "POST", "/api/rooms", "{"name":"Sala de testes"}")
+  rr := request(t, h, "POST", "/api/rooms", `{"name":"Sala de testes"}`)
   if rr.Code != 201 { t.Fatalf("create room = %d: %s", rr.Code, rr.Body.String()) }
   var room Room
   if err := json.Unmarshal(rr.Body.Bytes(), &room); err != nil || room.ID == "" { t.Fatal("missing created room", err) }
   path := "/api/rooms/" + room.ID + "/messages"
-  rr = request(t, h, "POST", path, "{"author":"Ana","text":"Olá AURORA!"}")
+  rr = request(t, h, "POST", path, `{"author":"Ana","text":"Olá AURORA!"}`)
   if rr.Code != 201 { t.Fatalf("send = %d: %s", rr.Code, rr.Body.String()) }
   rr = request(t, h, "GET", path, "")
   var messages []Message
@@ -42,12 +42,12 @@ func TestCreateRoomAndMessages(t *testing.T) {
 func TestValidationAndOrigin(t *testing.T) {
   h := New().Handler()
   for _, payload := range []string{
-    "{"name":""}", "{"name":"    "}", "{"name":"ok","privileged":true}",
+    `{"name":""}`, `{"name":"    "}`, `{"name":"ok","privileged":true}`,
   } {
     rr := request(t, h, "POST", "/api/rooms", payload)
     if rr.Code != 400 { t.Fatalf("payload %s returned %d", payload, rr.Code) }
   }
-  if rr := request(t, h, "POST", "/api/rooms/geral/messages", "{"author":"Ana","text":"   "}"); rr.Code != 400 { t.Fatal("accepted blank message") }
+  if rr := request(t, h, "POST", "/api/rooms/geral/messages", `{"author":"Ana","text":"   "}`); rr.Code != 400 { t.Fatal("accepted blank message") }
   if rr := request(t, h, "GET", "/api/rooms/nope/messages", ""); rr.Code != 404 { t.Fatal("missing room should be 404") }
   req := httptest.NewRequest("GET", "/api/health", nil)
   req.Header.Set("Origin", "https://untrusted.example")
@@ -58,7 +58,7 @@ func TestValidationAndOrigin(t *testing.T) {
 
 func TestMessageLimit(t *testing.T) {
   h := New().Handler()
-  rr := request(t, h, "POST", "/api/rooms/geral/messages", "{"author":"Ana","text":"hello"}")
+  rr := request(t, h, "POST", "/api/rooms/geral/messages", `{"author":"Ana","text":"hello"}`)
   if rr.Code != 201 { t.Fatal(rr.Body.String()) }
   rr = request(t, h, "GET", "/api/rooms/geral/messages", "")
   var messages []Message
