@@ -126,12 +126,14 @@ export default function App() {
     return ['auto', 'economy', 'balanced', 'high', 'ultra'].includes(value) ? value as QualityMode : 'auto';
   });
 
+  const backState = useRef({ settingsOpen, sidebarOpen, inspectorOpen, mobileTab, connected: false, joining: false });
   const session = useRef<RoomSession | null>(null);
   const messageList = useRef<HTMLDivElement>(null);
   const support = useMemo(capabilities, []);
   const updater = useOnlineUpdater();
   const connected = room.phase === 'connected';
   const joining = room.phase === 'connecting' || room.phase === 'reconnecting';
+  backState.current = { settingsOpen, sidebarOpen, inspectorOpen, mobileTab, connected, joining };
   const isHost = room.role === 'host';
   const liveStreams = room.remoteMedia.filter(item => item.kind === 'screen');
   const microphoneStreams = room.remoteMedia.filter(item => item.kind === 'microphone');
@@ -150,23 +152,24 @@ export default function App() {
 
   useEffect(() => {
     if (!isAndroid) return;
-    // A dedicated history entry lets the Android system Back key dismiss
-    // drawers and settings instead of immediately destroying an active room.
+    // Add a single synthetic history entry; the Android back key can now
+    // dismiss an overlay without exiting the app. Do not add a history entry
+    // on every tab change, which would trap users in an ever-growing stack.
     window.history.pushState({ auroraMobile: true }, '');
     function onMobileBack() {
-      if (settingsOpen) setSettingsOpen(false);
-      else if (sidebarOpen) setSidebarOpen(false);
-      else if (inspectorOpen) setInspectorOpen(false);
-      else if (connected && mobileTab !== 'stage') setMobileTab('stage');
-      else if (connected) {
+      const current = backState.current;
+      if (current.settingsOpen) setSettingsOpen(false);
+      else if (current.sidebarOpen) setSidebarOpen(false);
+      else if (current.inspectorOpen) setInspectorOpen(false);
+      else if (current.connected && current.mobileTab !== 'stage') setMobileTab('stage');
+      else if (current.connected) {
         if (window.confirm('Sair da sala e desconectar os participantes?')) leaveRoom();
-      } else if (joining) leaveRoom();
+      } else if (current.joining) leaveRoom();
       window.history.pushState({ auroraMobile: true }, '');
     }
     window.addEventListener('popstate', onMobileBack);
     return () => window.removeEventListener('popstate', onMobileBack);
-    // Only values that change what Back should dismiss belong here.
-  }, [isAndroid, settingsOpen, sidebarOpen, inspectorOpen, mobileTab, connected, joining]);
+  }, [isAndroid]);
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
