@@ -66,6 +66,10 @@ try {
   assert.ok((await page.locator('.channel-sidebar').getAttribute('class')).includes('sidebar-visible'));
   await page.screenshot({ path: resolve(screenshots, 'aurora-narrow-navigation.png'), fullPage: true });
   await page.getByRole('button', { name: 'Fechar painel de canais' }).click();
+  await page.waitForFunction(() => {
+    const side = document.querySelector('.channel-sidebar');
+    return !!side && side.getBoundingClientRect().right <= 2;
+  });
   await page.screenshot({ path: resolve(screenshots, 'aurora-narrow-lobby.png'), fullPage: true });
 
   console.log('AURORA UI visual smoke OK — 1440, 1024, 680; temas; painel lateral.');
