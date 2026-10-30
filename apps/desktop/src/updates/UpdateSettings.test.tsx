@@ -7,7 +7,7 @@ import type { OnlineUpdater } from './useOnlineUpdater';
 const base = {
   supported: true,
   status: 'available',
-  currentVersion: '0.0.6',
+  currentVersion: '0.0.7',
   available: { tag: 'v0.0.7-preview', version: '0.0.7', notes: 'Novos recursos', publishedAt: null, sizeBytes: 2500000 },
   progress: { downloadedBytes: 0, totalBytes: 2500000, percent: 0 },
   error: '',

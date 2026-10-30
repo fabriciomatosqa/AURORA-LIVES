@@ -13,6 +13,7 @@ import { inviteMessage, readSavedInvites, saveInvite, SAVED_INVITES_KEY, type Sa
 import { useOnlineUpdater } from './updates/useOnlineUpdater';
 import { UpdateIndicator, UpdateSettings } from './updates/UpdateSettings';
 import { UpdatePrompt } from './updates/UpdatePrompt';
+import { isAndroidRuntime } from './platform';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -112,6 +113,8 @@ export default function App() {
   const [membersExpanded, setMembersExpanded] = useState(true);
   const [deafened, setDeafened] = useState(false);
   const [busyMedia, setBusyMedia] = useState(false);
+  const isAndroid = useMemo(isAndroidRuntime, []);
+  const [mobileTab, setMobileTab] = useState<'stage' | 'chat' | 'members'>('stage');
   const [theme, setTheme] = useState<Theme>(() => {
     const stored = fromStorage('aurora.theme', 'dark');
     return stored === 'light' || stored === 'system' ? stored : 'dark';
@@ -135,6 +138,35 @@ export default function App() {
   const broadcasting = room.screen || liveStreams.length > 0;
   const memberCount = room.members.length;
   const selectedProfile = capturePreset(room.qualityMode, memberCount);
+
+  useEffect(() => {
+    if (isAndroid) {
+      document.documentElement.dataset.platform = 'android';
+    }
+    return () => {
+      if (isAndroid) delete document.documentElement.dataset.platform;
+    };
+  }, [isAndroid]);
+
+  useEffect(() => {
+    if (!isAndroid) return;
+    // A dedicated history entry lets the Android system Back key dismiss
+    // drawers and settings instead of immediately destroying an active room.
+    window.history.pushState({ auroraMobile: true }, '');
+    function onMobileBack() {
+      if (settingsOpen) setSettingsOpen(false);
+      else if (sidebarOpen) setSidebarOpen(false);
+      else if (inspectorOpen) setInspectorOpen(false);
+      else if (connected && mobileTab !== 'stage') setMobileTab('stage');
+      else if (connected) {
+        if (window.confirm('Sair da sala e desconectar os participantes?')) leaveRoom();
+      } else if (joining) leaveRoom();
+      window.history.pushState({ auroraMobile: true }, '');
+    }
+    window.addEventListener('popstate', onMobileBack);
+    return () => window.removeEventListener('popstate', onMobileBack);
+    // Only values that change what Back should dismiss belong here.
+  }, [isAndroid, settingsOpen, sidebarOpen, inspectorOpen, mobileTab, connected, joining]);
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -190,6 +222,7 @@ export default function App() {
     session.current?.stop();
     setFeedback('');
     setCopied(false);
+    setMobileTab('stage');
     const current = new RoomSession(cleanName(nickname), next => setRoom(next));
     session.current = current;
     void current.setQuality(qualityPreference);
@@ -205,9 +238,19 @@ export default function App() {
     setFeedback('');
     setCopied(false);
     setInspectorOpen(false);
+    setMobileTab('stage');
   }
 
   async function copyInvite(complete = false) {
+    if (complete && isAndroid && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: 'Convite AURORA LIVES', text: inviteMessage(room.code) });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        // Fall back to clipboard if the Android share sheet is unavailable.
+      }
+    }
     try {
       await navigator.clipboard.writeText(complete ? inviteMessage(room.code) : formatRoomCode(room.code));
       setCopied(true);
@@ -222,7 +265,7 @@ export default function App() {
     const saved = saveInvite(savedInvites, room.code, 'Encontro AURORA');
     setSavedInvites(saved);
     try { localStorage.setItem(SAVED_INVITES_KEY, JSON.stringify(saved)); } catch { /* indisponível */ }
-    setFeedback('Convite salvo somente neste computador.');
+    setFeedback('Convite salvo somente neste dispositivo.');
   }
 
   function removeSavedInvite(code: string) {
@@ -255,6 +298,10 @@ export default function App() {
   }
 
   async function toggleDisplay() {
+    if (isAndroid) {
+      setFeedback('No Android já é possível assistir às transmissões. Para transmitir a própria tela do celular será necessária a captura nativa MediaProjection, que não está disponível nesta prévia.');
+      return;
+    }
     setBusyMedia(true);
     setFeedback('');
     try {
@@ -284,7 +331,7 @@ export default function App() {
 
   const memberName = (peerId: string) => room.members.find(member => member.id === peerId)?.name || 'Participante';
 
-  return <div className="aurora-app">
+  return <div className={'aurora-app ' + (isAndroid ? 'aurora-mobile' : '')}>
     <div className="environment-glow" aria-hidden="true"/>
     <nav className="workspace-rail" aria-label="Navegação principal">
       <button className="rail-brand" onClick={() => { setSidebarOpen(value => !value); setInspectorOpen(false); }} title="Mostrar ou ocultar canais" aria-label="AURORA LIVES — início">
@@ -304,7 +351,7 @@ export default function App() {
       <button className="rail-control" title="Abrir configurações" aria-label="Abrir configurações" onClick={() => setSettingsOpen(true)}>
         <Settings2 size={20}/>
       </button>
-      <span className="rail-version">A·04</span>
+      <span className="rail-version">A·07</span>
     </nav>
 
     {sidebarOpen && <button className="sidebar-scrim" type="button" aria-label="Fechar painel de canais" onClick={() => setSidebarOpen(false)}/>}
@@ -353,6 +400,7 @@ export default function App() {
 
     <main className="workspace-main" id="principal">
       <header className="topbar">
+        {isAndroid && <span className="mobile-topbar-logo"><Crystal size={33}/></span>}
         <button className="topbar-menu icon-control" onClick={() => { setSidebarOpen(value => !value); setInspectorOpen(false); }} aria-label="Mostrar canais" aria-expanded={sidebarOpen}><Menu size={21}/></button>
         <span className="topbar-page-icon"><Hash size={21}/></span>
         <div className="topbar-page"><strong>{connected ? 'Encontro privado' : joining ? 'Conectando sua sala' : 'Visão geral'}</strong>
@@ -361,7 +409,7 @@ export default function App() {
         <UpdateIndicator updater={updater} onClick={() => setSettingsOpen(true)}/>
         <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
           <span className="status-indicator"/>
-          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.6'}
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.7'}
         </span>
         <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
@@ -417,7 +465,7 @@ export default function App() {
           </div>
 
           {savedInvites.length > 0 && <section className="saved-rooms" aria-label="Convites guardados">
-            <div className="saved-rooms-heading"><Bookmark size={17}/><strong>Convites salvos</strong><span>Somente neste computador</span></div>
+            <div className="saved-rooms-heading"><Bookmark size={17}/><strong>Convites salvos</strong><span>Somente neste dispositivo</span></div>
             <div className="saved-rooms-list">
               {savedInvites.map(item => <div className="saved-room" key={item.code}>
                 <span className="saved-room-icon"><Hash size={18}/></span>
@@ -434,7 +482,7 @@ export default function App() {
             <div className="privacy-note"><span className="privacy-icon"><ShieldCheck size={17}/></span>
               <span><strong>Seu espaço continua sendo seu.</strong><small>Sem contas, sem histórico permanente. A comunicação usa WebRTC quando a rede permite.</small></span></div>
             <button className="text-action" onClick={() => setDiagnosticsOpen(value => !value)}
-              aria-expanded={diagnosticsOpen}><Gauge size={16}/>{diagnosticsOpen ? 'Ocultar diagnóstico' : 'Diagnóstico do computador'}<ChevronDown size={16}/></button>
+              aria-expanded={diagnosticsOpen}><Gauge size={16}/>{diagnosticsOpen ? 'Ocultar diagnóstico' : 'Diagnóstico do dispositivo'}<ChevronDown size={16}/></button>
           </div>
 
           {diagnosticsOpen && <section className="compatibility-card">
@@ -480,7 +528,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="room-content">
+        <div className={'room-content mobile-view-' + mobileTab}>
           <section className="live-stage" aria-label="Compartilhamento de tela e voz">
             <header className="stage-heading">
               <div className="stage-heading-copy"><span className="section-overline">SEU PALCO</span><h2>Aurora <em>Live</em></h2><p>Este espaço é de vocês.</p></div>
@@ -509,10 +557,10 @@ export default function App() {
                 <span>{room.microphone ? 'Microfone ligado' : 'Ligar microfone'}</span>
               </button>
               <button className={'broadcast-control broadcast-screen ' + (room.screen ? 'control-on' : '')}
-                onClick={() => void toggleDisplay()} disabled={busyMedia} aria-pressed={room.screen}
+                onClick={() => void toggleDisplay()} disabled={busyMedia || isAndroid} aria-pressed={room.screen}
                 title={room.screen ? 'Parar compartilhamento' : 'Iniciar compartilhamento'}>
                 <span className="broadcast-control-icon">{room.screen ? <VideoOff size={19}/> : <MonitorUp size={19}/>}</span>
-                <span>{room.screen ? 'Parar transmissão' : 'Compartilhar tela'}</span>
+                <span>{room.screen ? 'Parar transmissão' : isAndroid ? 'Transmitir tela · em breve' : 'Compartilhar tela'}</span>
               </button>
               <button className={'broadcast-control broadcast-sound ' + (deafened ? 'control-muted' : '')}
                 onClick={() => setDeafened(value => !value)} aria-pressed={deafened}
@@ -521,6 +569,10 @@ export default function App() {
                 <span>{deafened ? 'Som silenciado' : 'Silenciar áudio'}</span>
               </button>
             </div>
+
+            {isAndroid && <div className="android-screen-notice"><Info size={16}/>
+              <span>No Android, você pode assistir às telas compartilhadas pelo Windows ou Linux. A transmissão da própria tela do celular depende de captura nativa e ainda não está disponível.</span>
+            </div>}
 
             <div className="stage-settings">
               <label htmlFor="video-profile"><Gauge size={17}/> Qualidade da transmissão</label>
@@ -593,6 +645,22 @@ export default function App() {
             </form>
             <p className="composer-hint"><ShieldCheck size={13}/> Conversa temporária, sem histórico em nuvem</p>
           </section>
+
+          <section className="mobile-members-panel" aria-label="Participantes da sala">
+            <div className="mobile-members-heading"><Users size={19}/>
+              <div><strong>Pessoas na sala</strong><small>{memberCount} de 10 participantes</small></div>
+              <span className="status-indicator"/>
+            </div>
+            <div className="mobile-members-list">
+              {room.members.map(member => <div className="mobile-member" key={member.id}>
+                <Avatar name={member.name} own={member.id === room.localId}/>
+                <div><strong>{member.name}{member.id === room.localId ? ' (você)' : ''}</strong>
+                  <small>{member.host ? 'Anfitrião' : 'Participante'} · Conectado</small></div>
+                <span className="online-pin" aria-label="Conectado"/>
+              </div>)}
+            </div>
+            <p>O anfitrião precisa manter a sala aberta. Compartilhe o código com seus amigos para que possam entrar.</p>
+          </section>
         </div>
       </>}
 
@@ -602,6 +670,27 @@ export default function App() {
         <p>{room.error || feedback}</p>
         <button onClick={() => { setFeedback(''); if (room.phase === 'error') leaveRoom(); }} aria-label="Fechar aviso" title="Fechar"><X size={17}/></button>
       </div>}
+
+      {isAndroid && <nav className="mobile-bottom-nav" aria-label="Navegação Android">
+        {connected ? <>
+          <button className={mobileTab === 'stage' ? 'selected' : ''} onClick={() => setMobileTab('stage')}
+            aria-current={mobileTab === 'stage' ? 'page' : undefined}><MonitorUp size={20}/><span>Transmissão</span></button>
+          <button className={mobileTab === 'chat' ? 'selected' : ''} onClick={() => setMobileTab('chat')}
+            aria-current={mobileTab === 'chat' ? 'page' : undefined}>
+            <MessageCircle size={20}/><span>Chat</span>{room.messages.length > 0 && <i aria-label={room.messages.length + ' mensagens'} />}</button>
+          <button className={mobileTab === 'members' ? 'selected' : ''} onClick={() => setMobileTab('members')}
+            aria-current={mobileTab === 'members' ? 'page' : undefined}><Users size={20}/><span>Pessoas</span></button>
+          <button onClick={() => setSettingsOpen(true)} aria-label="Abrir configurações Android">
+            <Settings2 size={20}/><span>Ajustes</span></button>
+        </> : <>
+          <button className="selected" onClick={() => { setSidebarOpen(false); document.querySelector('.lobby-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+            <Home size={20}/><span>Início</span></button>
+          <button onClick={() => setDiagnosticsOpen(value => !value)} aria-pressed={diagnosticsOpen}>
+            <Gauge size={20}/><span>Conexão</span></button>
+          <button onClick={() => setSettingsOpen(true)} aria-label="Abrir configurações Android">
+            <Settings2 size={20}/><span>Ajustes</span></button>
+        </>}
+      </nav>}
     </main>
 
     {inspectorOpen && <button type="button" className="inspector-scrim" aria-label="Fechar informações" onClick={() => setInspectorOpen(false)}/>}
@@ -659,7 +748,7 @@ export default function App() {
           <UpdateSettings updater={updater} connected={connected}/>
           <div className="privacy-disclaimer"><LockKeyhole size={19}/><p>Esta versão usa apelidos locais, não contas. Quem souber o código poderá entrar na sala enquanto o anfitrião estiver online.</p></div>
         </div>
-        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.6</span>
+        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.7</span>
           <button onClick={() => setSettingsOpen(false)}>Concluído <ArrowRight size={17}/></button></footer>
       </section>
     </div>}

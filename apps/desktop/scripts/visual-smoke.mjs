@@ -72,7 +72,28 @@ try {
   });
   await page.screenshot({ path: resolve(screenshots, 'aurora-narrow-lobby.png'), fullPage: true });
 
-  console.log('AURORA UI visual smoke OK — 1440, 1024, 680; temas; painel lateral.');
+  // Android viewport emulation: actual native APK still requires physical-device QA.
+  // The app reuses the React frontend, but mobile tabs and safe areas are verified here.
+  const android = await browser.newPage({
+    viewport: { width: 393, height: 873 },
+    deviceScaleFactor: 1,
+    isMobile: true,
+    hasTouch: true,
+    userAgent: 'Mozilla/5.0 (Linux; Android 16; POCO X6 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36'
+  });
+  await android.goto('http://127.0.0.1:1420', { waitUntil: 'networkidle' });
+  await android.getByRole('navigation', { name: 'Navegação Android' }).waitFor();
+  await android.getByRole('button', { name: 'Criar sala agora' }).waitFor();
+  await checkNoOverflow(android, 'Android portrait 393');
+  await android.screenshot({ path: resolve(screenshots, 'aurora-android-portrait.png'), fullPage: true });
+
+  await android.setViewportSize({ width: 873, height: 393 });
+  await checkNoOverflow(android, 'Android landscape 873');
+  await android.screenshot({ path: resolve(screenshots, 'aurora-android-landscape.png'), fullPage: true });
+  await android.close();
+
+  console.log('AURORA UI visual smoke OK — desktop + Android retrato/paisagem.');
+
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

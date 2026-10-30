@@ -1,7 +1,7 @@
 {
   "name": "@aurora-lives/desktop",
   "private": true,
-  "version": "0.0.6",
+  "version": "0.0.7",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
@@ -12,7 +12,11 @@
     "dev:native": "npm run tauri dev",
     "package:desktop": "npm run icons && tauri build",
     "test": "vitest run",
-    "test:visual": "node scripts/visual-smoke.mjs"
+    "test:visual": "node scripts/visual-smoke.mjs",
+    "android:init": "tauri android init --ci",
+    "android:dev": "tauri android dev",
+    "android:apk": "tauri android build --apk --target aarch64 --ci",
+    "android:preview": "vite --host 0.0.0.0 --port 1420"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

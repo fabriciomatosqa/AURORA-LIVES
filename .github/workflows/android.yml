@@ -1,0 +1,77 @@
+name: AURORA LIVES Android — APK experimental
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-arm64:
+    name: Android ARM64 · build e APK de teste
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    defaults:
+      run:
+        working-directory: apps/desktop
+    env:
+      CI: 'true'
+      GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx3g -Dorg.gradle.daemon=false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: android-actions/setup-android@v3
+      - name: Instalar Android SDK e NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install 'platforms;android-36' 'platforms;android-35' 'build-tools;36.0.0' 'ndk;27.2.12479018' 'platform-tools'
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - name: Instalar dependências React, PeerJS e Tauri
+        run: npm install --no-audit --no-fund
+      - name: Verificar código compartilhado e testes
+        run: |
+          npm run test
+          npm run build
+      - name: Gerar identidade visual AURORA
+        run: npm run icons
+      - name: Inicializar projeto Android Tauri 2
+        run: npm run tauri -- android init --ci --skip-targets-install
+      - name: Permitir microfone e orientação retrato/paisagem
+        run: python3 scripts/patch-android-manifest.py
+      - name: Compilar APK Android ARM64 experimental
+        run: npm run tauri -- android build --apk --debug --target aarch64 --ci
+      - name: Verificar e identificar APK para teste
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-android
+          apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)"
+          test -n "$apk"
+          cp "$apk" dist-android/AURORA-LIVES-Android-arm64-DEBUG.apk
+          test "$(stat -c %s dist-android/AURORA-LIVES-Android-arm64-DEBUG.apk)" -gt 1000000
+          (cd dist-android && sha256sum *.apk > SHA256SUMS-ANDROID.txt && sha256sum -c SHA256SUMS-ANDROID.txt)
+          echo 'APK DE DEBUG: certificado temporário; pode exigir reinstalação em versões futuras.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Disponibilizar APK de teste no GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: AURORA-LIVES-Android-ARM64-DEBUG-PREVIEW
+          path: |
+            apps/desktop/dist-android/*.apk
+            apps/desktop/dist-android/SHA256SUMS-ANDROID.txt
+          retention-days: 30
+          if-no-files-found: error
