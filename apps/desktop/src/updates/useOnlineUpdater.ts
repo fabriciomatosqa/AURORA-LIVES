@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
+import { supportsDesktopInstaller } from '../platform';
 
 export type UpdateInfo = {
   tag: string;
@@ -48,9 +49,9 @@ function readableError(error: unknown): string {
  * All integrity and installer checks remain in native Rust, not JavaScript.
  */
 export function useOnlineUpdater() {
-  const supported = isTauri();
+  const supported = isTauri() && supportsDesktopInstaller();
   const [status, setStatus] = useState<UpdateStatus>(() => supported ? 'checking' : 'unsupported');
-  const [currentVersion, setCurrentVersion] = useState('0.0.6');
+  const [currentVersion, setCurrentVersion] = useState('0.0.7');
   const [available, setAvailable] = useState<UpdateInfo | null>(null);
   const [includePrereleases, setPreviews] = useState(() => storageRead(PREVIEW_KEY) !== 'false');
   const [snoozed, setSnoozed] = useState<SnoozedRelease | null>(readSnooze);

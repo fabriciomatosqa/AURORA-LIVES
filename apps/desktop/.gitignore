@@ -1,1 +1,4 @@
 artifacts/
+
+src-tauri/gen/android/
+src-tauri/target/

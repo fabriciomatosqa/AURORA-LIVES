@@ -10,7 +10,7 @@ describe('nova interface AURORA LIVES', () => {
     expect(html).toContain('id="invite-code"');
     expect(html).toContain('Sem cadastro');
     expect(html).toContain('AURORA LIVES');
-    expect(html).toContain('Prévia 0.0.6');
+    expect(html).toContain('Prévia 0.0.7');
   });
 
   it('mantém a logo original e as regiões de navegação acessíveis', () => {
@@ -27,6 +27,6 @@ describe('nova interface AURORA LIVES', () => {
     const html = renderToStaticMarkup(<App />);
     expect(html).toContain('Comunidades públicas em desenvolvimento');
     expect(html).toContain('disabled=""');
-    expect(html).toContain('Diagnóstico do computador');
+    expect(html).toContain('Diagnóstico do dispositivo');
   });
 });

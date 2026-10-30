@@ -1,9 +1,13 @@
 [package]
 name = "aurora-lives"
-version = "0.0.6"
+version = "0.0.7"
 description = "AURORA LIVES desktop"
 authors = ["AURORA"]
 edition = "2021"
+
+[lib]
+name = "aurora_lives_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -1,5 +1,6 @@
 import { ArrowDownToLine, ArrowRight, CheckCircle2, CloudDownload, DownloadCloud, ExternalLink, Info, LoaderCircle, RefreshCcw, ShieldCheck, Sparkles, XCircle } from 'lucide-react';
 import type { OnlineUpdater } from './useOnlineUpdater';
+import { isAndroidRuntime } from '../platform';
 
 function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1).replace('.', ',') + ' MB';
@@ -43,7 +44,9 @@ export function UpdateSettings({ updater, connected }: { updater: OnlineUpdater;
       <span><strong>Receber versões de teste</strong><small>Inclui versões publicadas como Pre-release no GitHub.</small></span>
     </label>
     {!supported && <div className="updates-message"><Info size={17}/>
-      <p>A atualização integrada funciona no aplicativo instalado para Windows ou Linux.</p></div>}
+      <p>{isAndroidRuntime()
+        ? 'No Android, os APKs são publicados na mesma página de releases do GitHub. A atualização precisa ser autorizada pelo sistema.'
+        : 'A atualização integrada funciona no aplicativo instalado para Windows ou Linux.'}</p></div>}
 
     {supported && status === 'checking' && <div className="updates-message">
       <LoaderCircle className="updates-spin" size={17}/><p>Procurando novas versões no GitHub...</p>
