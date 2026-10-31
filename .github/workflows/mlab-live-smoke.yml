@@ -1,34 +1,91 @@
-name: Measurement Lab NDT7 — teste real
+name: M-Lab · engine and Android TLS regression
 on:
   pull_request:
     paths:
-      - 'apps/desktop/src-tauri/src/speed_test.rs'
+      - 'apps/desktop/src-tauri/src/speed_*.rs'
       - 'apps/desktop/src-tauri/Cargo.toml'
+      - 'apps/desktop/scripts/speed-probe/**'
+      - '.github/workflows/mlab-live-smoke.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/desktop/src-tauri/src/speed_*.rs'
+      - 'apps/desktop/src-tauri/Cargo.toml'
+      - 'apps/desktop/scripts/speed-probe/**'
       - '.github/workflows/mlab-live-smoke.yml'
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: mlab-network-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   live-ndt7:
-    name: M-Lab real — download, upload, RTT e IP
-    runs-on: ubuntu-22.04
+    name: M-Lab real · download/upload and live events
+    runs-on: ubuntu-latest
     timeout-minutes: 18
-    defaults:
-      run:
-        working-directory: apps/desktop
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
       - uses: dtolnay/rust-toolchain@stable
-      - name: Dependências Linux
+      - name: Unit tests including panic and timeout recovery
+        run: cargo test --manifest-path apps/desktop/scripts/speed-probe/native/Cargo.toml
+      - name: Real NDT7 transfer through the production engine (runner IP published by M-Lab)
+        run: cargo test --manifest-path apps/desktop/scripts/speed-probe/native/Cargo.toml mlab_live_smoke -- --ignored --nocapture
+  android-tls:
+    name: Android 15 · reproduce old JNI panic and verify secure discovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: SDK and NDK
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf
-      - name: Preparar projeto e logo original
+          sdkmanager_bin="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print | sort -V | tail -n 1)"
+          yes | "$sdkmanager_bin" --licenses >/dev/null || true
+          "$sdkmanager_bin" 'platforms;android-35' 'build-tools;36.0.0' 'ndk;27.2.12479018'
+      - name: Compile shared production network engine for Android x86_64
         run: |
-          npm install --no-audit --no-fund
-          npm run icons
-      - name: Verificar M-Lab NDT7 REAL sem valores simulados
-        run: cargo test --manifest-path src-tauri/Cargo.toml mlab_live_smoke -- --ignored --nocapture
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
+          toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$toolchain/x86_64-linux-android26-clang"
+          export CC_x86_64_linux_android="$toolchain/x86_64-linux-android26-clang"
+          export AR_x86_64_linux_android="$toolchain/llvm-ar"
+          cargo build --manifest-path apps/desktop/scripts/speed-probe/native/Cargo.toml --target x86_64-linux-android
+          mkdir -p apps/desktop/scripts/speed-probe/android/app/src/main/jniLibs/x86_64
+          cp apps/desktop/scripts/speed-probe/native/target/x86_64-linux-android/debug/libaurora_speed_probe.so apps/desktop/scripts/speed-probe/android/app/src/main/jniLibs/x86_64/
+          gradle -p apps/desktop/scripts/speed-probe/android :app:assembleDebug :app:assembleDebugAndroidTest --console=plain
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify old failure and corrected HTTPS on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          disable-animations: true
+          script: |
+            adb logcat -c
+            adb install -r apps/desktop/scripts/speed-probe/android/app/build/outputs/apk/debug/app-debug.apk
+            adb install -r apps/desktop/scripts/speed-probe/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell am instrument -w com.aurora.speedprobe.test/androidx.test.runner.AndroidJUnitRunner | tee /tmp/speed-tls-tests.txt
+            adb logcat -d -s AuroraSpeedProof '*:S' > /tmp/speed-tls-logcat.txt
+            grep -q 'OK (2 tests)' /tmp/speed-tls-tests.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-speed-tls-proof
+          path: /tmp/speed-tls-*.txt
+          if-no-files-found: warn
