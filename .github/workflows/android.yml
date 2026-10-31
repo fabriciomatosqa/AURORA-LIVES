@@ -12,9 +12,13 @@ permissions:
 # Never race first-time key creation or cache save for the same branch.
 concurrency:
   group: aurora-lives-android-signing-${{ github.ref }}
-  cancel-in-progress: false
+  # PRs never restore the signing key; superseded PR builds may be cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  updater-integration:
+    uses: ./.github/workflows/android-updater-tests.yml
+
   android-arm64:
     name: Android ARM64 · release assinado ou prévia debug
     runs-on: ubuntu-latest
@@ -163,6 +167,7 @@ jobs:
             apps/desktop/dist-android/SHA256SUMS-ANDROID.txt
             apps/desktop/dist-android/ANDROID-CERT-SHA256.txt
             apps/desktop/dist-android/aurora-lives-update.json
+            apps/desktop/dist-android/ANDROID-MANIFEST-TREE.txt
           retention-days: 30
           if-no-files-found: error
 
@@ -170,7 +175,7 @@ jobs:
     name: Anexar APK Android à release GitHub
     # Never publish a transient DEBUG certificate as an in-place app update.
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && needs.android-arm64.outputs.signed == 'true'
-    needs: [android-arm64]
+    needs: [android-arm64, updater-integration]
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:

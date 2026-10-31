@@ -486,7 +486,12 @@ pub fn install_update(app: AppHandle) -> Result<(), String> {
         let bridge = app.state::<AndroidInstaller>();
         bridge.0.run_mobile_plugin::<ApkInstallResponse>(
             "installApk",
-            ApkInstallRequest { path: stored.path.to_string_lossy().to_string() }
+            ApkInstallRequest {
+                path: stored.path.to_string_lossy().to_string(),
+                sha256: stored.sha256.clone(),
+                size: stored.size,
+                version: stored.version.clone(),
+            }
         ).map_err(|e| format!("Não foi possível solicitar a instalação Android: {e}"))?;
         // Android decides whether the package can replace the installed app.
         // Incompatible APK signatures are never bypassed.
@@ -512,6 +517,9 @@ struct ApkInstallResponse {}
 #[serde(rename_all = "camelCase")]
 struct ApkInstallRequest {
     path: String,
+    sha256: String,
+    size: u64,
+    version: String,
 }
 
 /// Android's native installer bridge, registered only for the Android build.

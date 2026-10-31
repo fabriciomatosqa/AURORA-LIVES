@@ -35,7 +35,7 @@ if missing:
 # The verified APK is shared through an app-private FileProvider URI.
 if "com.aurora.lives.aurora.fileprovider" not in xml:
     provider = (
-        '        <provider android:name="androidx.core.content.FileProvider" '
+        '        <provider android:name="com.aurora.lives.ApkFileProvider" '
         'android:authorities="com.aurora.lives.aurora.fileprovider" '
         'android:exported="false" android:grantUriPermissions="true">\n'
         '            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" '
@@ -47,6 +47,13 @@ if "com.aurora.lives.aurora.fileprovider" not in xml:
         raise SystemExit("Tag </application> não encontrada.")
 xml = re.sub(r'\s+android:screenOrientation="[^"]+"', "", xml)
 xml = re.sub(r'\s+android:resizeableActivity="false"', ' android:resizeableActivity="true"', xml)
+# Also repair a previously patched generated tree, not just a clean `android init`.
+ET.register_namespace("android", ANDROID)
+root = ET.fromstring(xml)
+for entry in root.findall(".//provider"):
+    if entry.get(f"{{{ANDROID}}}authorities") == "com.aurora.lives.aurora.fileprovider":
+        entry.set(f"{{{ANDROID}}}name", "com.aurora.lives.ApkFileProvider")
+xml = ET.tostring(root, encoding="unicode")
 manifest.write_text(xml, encoding="utf-8")
 resources = Path("src-tauri/gen/android/app/src/main/res/xml")
 resources.mkdir(parents=True, exist_ok=True)
@@ -60,6 +67,10 @@ resources.mkdir(parents=True, exist_ok=True)
 plugin = Path("src-tauri/gen/android/app/src/main/java/com/aurora/lives/ApkInstallerPlugin.kt")
 plugin.parent.mkdir(parents=True, exist_ok=True)
 plugin.write_text(ANDROID_INSTALLER_PLUGIN, encoding="utf-8")
+for helper in ("ApkFileProvider.kt", "ApkUpdateInstaller.kt"):
+    (plugin.parent / helper).write_text(
+        (Path(__file__).parent / helper).read_text(encoding="utf-8"), encoding="utf-8"
+    )
 try:
     root = ET.fromstring(xml)
 except ET.ParseError as error:
@@ -72,5 +83,7 @@ assert "android.permission.INTERNET" in permissions
 assert "android.permission.REQUEST_INSTALL_PACKAGES" in permissions
 providers = root.findall(".//provider")
 assert len([p for p in providers if p.get(f"{{{ANDROID}}}authorities") == "com.aurora.lives.aurora.fileprovider"]) == 1
+provider_names = [p.get(f"{{{ANDROID}}}name") for p in providers]
+assert len(provider_names) == len(set(provider_names)), "Provider ComponentName duplicado."
 assert not any(f"{{{ANDROID}}}screenOrientation" in activity.attrib for activity in root.iter("activity"))
 print("Android: microfone, rotação, FileProvider e instalador APK nativo configurados.")

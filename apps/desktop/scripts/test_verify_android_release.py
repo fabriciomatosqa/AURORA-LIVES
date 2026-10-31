@@ -25,5 +25,28 @@ class SigningMetadataTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.metadata(badging.replace("versionCode='17'", "versionCode='16'"), sig, apk, "0.0.17", "a" * 64)
 
+
+class PackagedProviderTests(unittest.TestCase):
+    def tree(self, updater):
+        return f'''  E: application (line=1)
+    E: provider (line=2)
+      A: android:name(0x01010003)="androidx.core.content.FileProvider"
+      A: android:authorities(0x01010018)="com.aurora.lives.fileprovider"
+      E: meta-data (line=3)
+        A: android:name(0x01010003)="android.support.FILE_PROVIDER_PATHS"
+    E: provider (line=4)
+      A: android:name(0x01010003)="{updater}"
+      A: android:authorities(0x01010018)="com.aurora.lives.aurora.fileprovider"
+      E: meta-data (line=5)
+        A: android:name(0x01010003)="android.support.FILE_PROVIDER_PATHS"
+'''
+
+    def test_packaged_legacy_collision_is_blocked(self):
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            module.verify_provider_manifest(self.tree("androidx.core.content.FileProvider"))
+
+    def test_isolated_component_is_accepted(self):
+        module.verify_provider_manifest(self.tree("com.aurora.lives.ApkFileProvider"))
+
 if __name__ == "__main__":
     unittest.main()
