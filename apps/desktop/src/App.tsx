@@ -199,6 +199,16 @@ export default function App() {
     return () => window.removeEventListener('resize', adjustPanels);
   }, []);
 
+  // The connection meter is inside the expandable diagnostics section.
+  // Render that section first, then navigate to the real dial.
+  useEffect(() => {
+    if (!isAndroid || lobbySection !== 'connection' || !diagnosticsOpen || connected || joining) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.querySelector('.speed-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isAndroid, lobbySection, diagnosticsOpen, connected, joining]);
+
   useEffect(() => () => session.current?.stop(), []);
 
   useEffect(() => {
@@ -724,7 +734,7 @@ export default function App() {
             onClick={() => { setLobbySection('home'); setSidebarOpen(false); document.querySelector('.lobby-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); }}>
             <Home size={20}/><span>Início</span></button>
           <button className={lobbySection === 'connection' ? 'selected' : ''} aria-current={lobbySection === 'connection' ? 'page' : undefined}
-            onClick={() => { setLobbySection('connection'); document.querySelector('.speed-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
+            onClick={() => { setLobbySection('connection'); setDiagnosticsOpen(true); }}>
             <Gauge size={20}/><span>Conexão</span></button>
           <button onClick={() => setSettingsOpen(true)} aria-label="Abrir configurações Android">
             <Settings2 size={20}/><span>Ajustes</span></button>
