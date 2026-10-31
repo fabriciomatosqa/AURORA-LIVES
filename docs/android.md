@@ -108,3 +108,21 @@ A primeira compilação da branch principal gera uma chave de **teste** própria
 A execução de pull requests não acessa o cache de assinatura; usa APK DEBUG descartável. O APK com assinatura de teste persistente é distribuído em releases como `AURORA-LIVES-Android-arm64.apk` e verificado por SHA-256, metadados e fingerprint de certificado.
 
 **Limitação importante:** o Actions Cache não é backup duradouro/seguro de chave privada e pode expirar ou ser removido. O processo replica o fluxo de testes do IPTV, mas NÃO fornece uma solução de assinatura de produção. Mantenha uma cópia privada protegida da chave se quiser continuidade garantida. A identidade criada inicialmente não é a mesma dos APKs anteriores: uma reinstalação inicial após backup poderá ser necessária. As atualizações posteriores só funcionam enquanto a mesma chave for preservada. A instalação poderá exigir confirmação do Android.
+
+
+## Correção do atualizador — versões 0.0.25 e 0.0.26
+
+A investigação identificou e reproduziu a colisão entre o FileProvider do Tauri e o do atualizador: ambos usavam a mesma classe de componente. O APK era válido, mas o Android recusava a URI com uma SecurityException de authority divergente e o instalador mostrava erro de análise de pacote.
+
+O atualizador agora utiliza um componente próprio, confere o tamanho/SHA-256/versão enviados pelo Rust e valida todos os bytes lidos pela URI antes de abrir o instalador. Também foi corrigida a coleta de certificados no Android 9/10, preservando a comparação obrigatória com a assinatura instalada. A geração de releases exige testes instrumentados em APIs 29 e 35 e validação do APK final.
+
+Os testes reproduziram a falha antiga e instalaram uma atualização pelo instalador nativo nos dois sistemas, com leitura por outro aplicativo e preservação de dados. O relatório completo está em [android-updater-investigation.md](android-updater-investigation.md).
+
+Para testar no POCO:
+
+1. Baixe o APK **0.0.25** na release oficial `v0.0.25-preview` e abra pelo aplicativo Downloads/Arquivos do Android. Instale **por cima** da versão atual, sem desinstalar nem limpar dados. Esse primeiro passo substitui o provider defeituoso da versão antiga.
+2. Abra a 0.0.25 e vá a **Configurações → Atualizações online → Verificar atualizações**. Mantenha habilitado o recebimento de versões de teste, pois as releases do projeto estão nesse canal.
+3. Aceite a **0.0.26**, acompanhe o progresso e confirme o instalador do sistema. Caso o Android solicite, autorize o LIVES a instalar aplicativos e repita a instalação.
+4. Reabra o LIVES e confira **v0.0.26** e a preservação das preferências.
+
+A assinatura de distribuição permanece a mesma desde a série 0.0.19. A verificação física no POCO/HyperOS deve ser distinguida dos testes em emulador. O mecanismo não contorna o consentimento nem as verificações do Android.

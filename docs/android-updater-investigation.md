@@ -93,3 +93,16 @@ adb shell dumpsys package com.aurora.lives > lives-installed-package.txt
 Inspect `AuroraApkInstaller`, `FileProvider`, `PackageInstaller` and `PackageManager` messages. Logs can contain device/application information; review them before sharing.
 
 The emulators establish Android provider/grant behavior and installation/data retention for the shared native updater. They do not emulate Xiaomi/HyperOS, ARM64 hardware, the user's existing cache contents, audio/video devices or real mobile-network conditions. Those observations must not be represented as physical-device test results.
+
+## Measured regression results
+
+[Android integration run](https://github.com/fabriciomatosqa/AURORA-LIVES/actions/runs/41213356275)
+
+| Environment | Legacy URI/parse failure reproduced | Native tests | Actual system-installer update | Data sentinel |
+| --- | --- | --- | --- | --- |
+| Android 10, API 29 | Yes: authority mismatch and parsing dialog | 9 passed | fixture versionCode 25 → 26 | Preserved |
+| Android 15, API 35 | Yes: authority mismatch and parsing dialog | 9 passed | fixture versionCode 25 → 26 | Preserved |
+
+Both device jobs execute the production native installer helper, including validation against download metadata, package/version/certificate checks, cross-UID URI reading and negative integrity/compatibility tests. These are emulator fixture results, not claims of a POCO physical-device test. The full ARM64 Tauri APK is compiled and inspected separately in the release pipeline.
+
+The first corrected distribution is 0.0.25. Version 0.0.26 retains the same updater implementation and provides the following real, signed release for an in-app transition after manually installing 0.0.25 over the old version.
