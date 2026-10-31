@@ -36,6 +36,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
@@ -71,6 +74,10 @@ jobs:
         run: npm run tauri -- android init --ci --skip-targets-install
       - name: Permissões Android, FileProvider e instalador nativo
         run: python3 scripts/patch-android-manifest.py
+      - name: Normalizar tecnicamente os PNGs do ícone Android sem alterar o desenho
+        run: |
+          python3 -m pip install --disable-pip-version-check Pillow==11.3.0
+          python3 scripts/normalize-android-icons.py
       # Same signing-key lifecycle as AURORA IPTV: restore from Actions cache,
       # recover from repository Secrets, or bootstrap ONLY the first release.
       # PR builds cannot access the key and remain disposable DEBUG builds.
@@ -100,10 +107,10 @@ jobs:
           echo 'Assinatura de teste Android persistente configurada.' >> "$GITHUB_STEP_SUMMARY"
       - name: Compilar APK Android ARM64 assinado
         if: steps.signing.outputs.signed == 'true'
-        run: npm run tauri -- android build --apk --target aarch64 --ci
+        run: npx --no-install tauri android build --apk --target aarch64 --ci
       - name: Compilar APK ARM64 DEBUG experimental
         if: steps.signing.outputs.signed != 'true'
-        run: npm run tauri -- android build --apk --debug --target aarch64 --ci
+        run: npx --no-install tauri android build --apk --debug --target aarch64 --ci
       - name: Verificar APK e identificar assinatura
         shell: bash
         run: |
