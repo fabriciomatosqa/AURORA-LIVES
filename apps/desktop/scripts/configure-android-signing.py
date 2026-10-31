@@ -24,6 +24,9 @@ signing = """    signingConfigs {
         }
     }
     buildTypes {
+        // Tauri CLI scans for the debug build type even during release builds.
+        // Keep this declaration while signing only the release variant.
+        getByName("debug") { }
         getByName("release") {
             signingConfig = signingConfigs.getByName("auroraRelease")
         }
