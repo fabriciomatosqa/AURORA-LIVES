@@ -24,7 +24,7 @@ The old binary manifest contains two providers with identical class name `androi
 - `com.aurora.lives.fileprovider`, supplied by Tauri, with cache root `my_cache_images` and external root `my_images`.
 - `com.aurora.lives.aurora.fileprovider`, supplied by the updater, with cache root `aurora_verified_apks` under `aurora-lives-updates/`.
 
-Distinct authorities do not give these components distinct ComponentNames. Android can reuse a provider instance attached with the other metadata/path strategy. A URI generated for `aurora_verified_apks` can consequently be unreadable even though direct filesystem validation succeeds. The API 29 emulator reproduced the failure as:
+Distinct authorities do not give these components distinct ComponentNames. Android can reuse a provider instance attached with the other metadata/path strategy. A URI generated for `aurora_verified_apks` can consequently be unreadable even though direct filesystem validation succeeds. The API 29 and API 35 emulators reproduced the failure as:
 
 ```text
 java.lang.SecurityException: The authority com.aurora.lives.aurora.fileprovider does not match the one of the contentProvider: com.aurora.lives.fileprovider
@@ -43,7 +43,7 @@ The AURORA IPTV was inspected read-only. It has one update provider and uses a n
 - Give the updater its own `com.aurora.lives.ApkFileProvider` component. Retain Tauri's existing provider for its original operations.
 - Repair both newly generated and already patched Android manifests. Reject duplicated component names.
 - Send expected SHA-256, byte count and version from Rust's verified download state to Kotlin; compare them again rather than computing an unrelated new baseline.
-- Check package identity, exact version/code, increasing code, minSdk, native ABI and exact installed signer equality.
+- Check package identity, exact version/code, increasing code, minSdk, native ABI and exact installed signer equality. Request both GET_SIGNATURES and GET_SIGNING_CERTIFICATES, as IPTV does: the Android 9/10 archive parser only collects certificates when GET_SIGNATURES is present. The API 29 integration test exposed this additional compatibility defect; equality checks remain mandatory.
 - Read the entire shared content URI and compare its byte count/hash to Rust's verified metadata before starting the installer.
 - Run native verification on a worker thread and launch the system UI on the Activity thread.
 - Keep the APK in app-private cache with the original narrow FileProvider path and temporary read permission.

@@ -25,8 +25,6 @@ class SigningMetadataTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.metadata(badging.replace("versionCode='17'", "versionCode='16'"), sig, apk, "0.0.17", "a" * 64)
 
-if __name__ == "__main__":
-    unittest.main()
 
 class PackagedProviderTests(unittest.TestCase):
     def tree(self, updater):
@@ -49,3 +47,6 @@ class PackagedProviderTests(unittest.TestCase):
 
     def test_isolated_component_is_accepted(self):
         module.verify_provider_manifest(self.tree("com.aurora.lives.ApkFileProvider"))
+
+if __name__ == "__main__":
+    unittest.main()

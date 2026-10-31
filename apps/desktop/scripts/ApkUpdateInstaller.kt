@@ -24,7 +24,7 @@ class ApkUpdateInstaller(private val context: Context) {
     private fun signerDigests(info: PackageInfo): Set<String> {
         @Suppress("DEPRECATION")
         val signatures = if (Build.VERSION.SDK_INT >= 28) {
-            info.signingInfo?.apkContentsSigners
+            info.signingInfo?.apkContentsSigners ?: info.signatures
         } else info.signatures
         return signatures.orEmpty().map { sig ->
             MessageDigest.getInstance("SHA-256").digest(sig.toByteArray()).hex()
@@ -49,8 +49,10 @@ class ApkUpdateInstaller(private val context: Context) {
     private fun validateApk(file: File, expectedVersion: String) {
         val manager = context.packageManager
         @Suppress("DEPRECATION")
-        val flags = if (Build.VERSION.SDK_INT >= 28)
-            PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        // Android 9/10's archive parser collects certificates only when the
+        // legacy flag is also present. IPTV uses the same combined flags.
+        val flags = PackageManager.GET_SIGNATURES or if (Build.VERSION.SDK_INT >= 28)
+            PackageManager.GET_SIGNING_CERTIFICATES else 0
         @Suppress("DEPRECATION")
         val archive = manager.getPackageArchiveInfo(file.absolutePath, flags)
             ?: throw IllegalArgumentException("APK inválido ou incompatível.")
@@ -67,6 +69,7 @@ class ApkUpdateInstaller(private val context: Context) {
         }
         val existing = signerDigests(installed)
         val incoming = signerDigests(archive)
+        Log.i("AuroraApkInstaller", "Certificados: installed=$existing incoming=$incoming")
         require(existing.isNotEmpty() && incoming == existing) {
             "Assinatura do APK diferente da versão instalada. A atualização foi bloqueada."
         }
