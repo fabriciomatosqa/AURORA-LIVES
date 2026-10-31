@@ -87,6 +87,19 @@ try {
   await checkNoOverflow(android, 'Android portrait 393');
   await android.screenshot({ path: resolve(screenshots, 'aurora-android-portrait.png'), fullPage: true });
 
+  // A conexão na navegação inferior deve abrir o velocímetro, não alternar
+  // um painel invisível. Capture e cheque layout real na largura do POCO.
+  await android.getByRole('button', { name: 'Conexão', exact: true }).click();
+  await android.waitForFunction(() => {
+    const nav = [...document.querySelectorAll('.mobile-bottom-nav button')];
+    return nav.some(button => button.textContent?.includes('Conexão') && button.classList.contains('selected'));
+  });
+  assert.equal(await android.locator('.speedometer-svg').count(), 1);
+  assert.equal(await android.locator('.speed-consent').count(), 0);
+  await checkNoOverflow(android, 'Android speedometer portrait 393');
+  await android.screenshot({ path: resolve(screenshots, 'aurora-android-speedtest.png'), fullPage: false });
+
+
   await android.setViewportSize({ width: 873, height: 393 });
   await checkNoOverflow(android, 'Android landscape 873');
   await android.screenshot({ path: resolve(screenshots, 'aurora-android-landscape.png'), fullPage: true });
