@@ -78,6 +78,10 @@ jobs:
         run: |
           python3 -m pip install --disable-pip-version-check Pillow==11.3.0
           python3 scripts/normalize-android-icons.py
+      - name: Forçar os ícones do APK a usar a logo oficial AURORA
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_launcher_icons.py'
+          python3 scripts/sync-android-launcher.py
       # Same signing-key lifecycle as AURORA IPTV: restore from Actions cache,
       # recover from repository Secrets, or bootstrap ONLY the first release.
       # PR builds cannot access the key and remain disposable DEBUG builds.
