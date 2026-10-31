@@ -1,18 +1,11 @@
 import { useEffect, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen } from '@tauri-apps/api/event';
+import { runSpeedMeasurement, type SpeedProgress } from './runSpeedMeasurement';
 import { Activity, ArrowDown, ArrowUp, Clock3, Gauge, Globe, RefreshCw, Trash2, Wifi } from 'lucide-react';
 import { KEY, readHistory, addHistory, quality, number, type SpeedRow, type SpeedResult } from './speedHistory';
 import { SPEED_TICKS, gaugeFraction, dialArc, dialPoint } from './speedGauge';
 
-type SpeedProgress = {
-  phase: string;
-  downloadMbps: number | null;
-  uploadMbps: number | null;
-  pingMs: number | null;
-  jitterMs: number | null;
-  publicIp: string | null;
-};
 const PROGRESS_EVENT = 'aurora:connection-progress';
 const validRate = (n: number | null | undefined): n is number =>
   typeof n === 'number' && Number.isFinite(n) && n >= 0;
@@ -81,24 +74,19 @@ export function ConnectionSpeedTest() {
     setResult(null);
     setProgress(null);
     setError('');
-    let unlisten: UnlistenFn | undefined;
     try {
-      // Register BEFORE invoking native code, including the first locating event.
-      unlisten = await listen<SpeedProgress>(PROGRESS_EVENT, event => {
-        if (event.payload) setProgress(event.payload);
-      });
-      const value = await invoke<SpeedResult>('measure_connection');
-      if ([value.downloadMbps, value.uploadMbps, value.pingMs, value.jitterMs].some(
-          n => typeof n !== 'number' || !Number.isFinite(n) || n < 0)) {
-        throw new Error('A medição retornou valores inválidos.');
-      }
+      const value = await runSpeedMeasurement({
+        listen: onProgress => listen<SpeedProgress>(PROGRESS_EVENT, event => {
+          if (event.payload) onProgress(event.payload);
+        }),
+        invoke: () => invoke<SpeedResult>('measure_connection'),
+      }, setProgress);
       setResult(value);
       setMeasuredAt(new Date());
       setHistory(old => addHistory(old, value));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      unlisten?.();
       setMeasuring(false);
     }
   }
@@ -109,6 +97,7 @@ export function ConnectionSpeedTest() {
     ? (isUpload ? progress?.uploadMbps : stage === 'download' ? progress?.downloadMbps : null)
     : result?.downloadMbps;
   const status = !measuring ? (result ? 'Teste concluído' : 'Pronto para medir')
+    : stage === 'connecting-download' ? 'Conectando ao servidor de download…'
     : stage === 'download' ? 'Medindo download em tempo real'
     : isUpload ? 'Medindo upload em tempo real'
     : stage === 'connecting-upload' ? 'Preparando teste de upload'

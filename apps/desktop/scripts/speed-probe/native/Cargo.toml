@@ -1,0 +1,17 @@
+[package]
+name = "aurora-speed-probe"
+version = "0.1.0"
+edition = "2021"
+[lib]
+crate-type = ["rlib", "cdylib"]
+[dependencies]
+ndt7-client = "=0.3.0"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+# Reproduce the exact implicit Locate client used in v0.0.29, on Android.
+reqwest13 = { package = "reqwest", version = "0.13", default-features = false, features = ["json", "rustls"] }
