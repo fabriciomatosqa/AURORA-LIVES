@@ -58,6 +58,11 @@ export function UpdateSettings({ updater, connected }: { updater: OnlineUpdater;
         <strong>v{available.version}</strong>
       </div>
       <span className="release-size">Instalador: {formatSize(available.sizeBytes)}</span>
+      {isAndroidRuntime() && available.previewApk && <div className="updates-message">
+        <Info size={17}/><p>Esta versão Android é um APK de teste (DEBUG). O download é verificado,
+        mas a instalação sobre a versão atual pode falhar caso as assinaturas sejam diferentes.
+        Seus dados locais podem ser perdidos se precisar desinstalar; faça backup antes.</p>
+      </div>}
       {available.notes && <p className="release-notes">{available.notes}</p>}
       {status === 'downloading' && <>
         <div className="update-progress-meta">

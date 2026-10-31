@@ -81,3 +81,10 @@ Android: a versão 0.0.11 introduz o instalador de APK integrado por FileProvide
 Para lançar APKs atualizáveis, configure no GitHub Actions Secrets: `ANDROID_KEY_BASE64` (JKS/keystore persistente em base64), `ANDROID_KEY_PASSWORD` e `ANDROID_KEY_ALIAS`. O workflow assina somente builds release com essa chave; sem secrets, continua emitindo APK DEBUG apenas para teste, sem alegar compatibilidade de atualização. **Jamais versionar o arquivo .jks ou a senha.**
 
 Os builds de Windows/Linux mantêm suas opções e mecanismos existentes. Os ciclos de atualização são apenas com o aplicativo aberto; não há execução em segundo plano após encerramento.
+
+
+## Android 0.0.14 — Correção de detecção de APK DEBUG
+
+Versões Android 0.0.12 e 0.0.13 procuravam somente `AURORA-LIVES-Android-arm64.apk`. Quando o workflow não tinha uma chave de assinatura persistente, ele publicava somente `AURORA-LIVES-Android-arm64-DEBUG.apk`, e a consulta retornava falsamente “Você já está usando a versão mais recente”. A partir da 0.0.14, o atualizador prioriza o APK assinado, mas aceita o APK DEBUG exato e seu manifesto SHA256SUMS-ANDROID.txt como alternativa experimental, sem relaxar o bloqueio de URLs externas ou hashes inválidos. O aplicativo mostra aviso sobre assinatura e dados locais.
+
+**Atenção:** a versão 0.0.12 instalada já contém a falha de consulta, então precisará de uma instalação manual única para ativar o novo mecanismo. Assinaturas diferentes impedem instalação sobre o pacote anterior. O APK DEBUG experimental NÃO é uma solução de assinatura; a correção definitiva continua dependendo de configurar um keystore persistente no workflow de releases. Nunca desative verificações de assinatura.

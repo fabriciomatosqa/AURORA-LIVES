@@ -61,6 +61,8 @@ pub struct AvailableUpdate {
     notes: String,
     published_at: Option<String>,
     size_bytes: u64,
+    /// True for experimental APKs that may not match the installed signing key.
+    preview_apk: bool,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -168,10 +170,29 @@ fn asset_for<'a>(release: &'a Release, file_name: &str) -> Option<&'a ReleaseAss
         .find(|a| a.name == file_name && a.size > 0 && a.size <= MAX_DOWNLOAD && official_url(&release.tag_name, a))
 }
 
+// Android CI publishes either a release-signed APK, or a DEBUG APK when no
+// persistent signing key is configured. Prefer signed if both are present.
+#[cfg(any(target_os = "android", test))]
+fn android_apk_for(release: &Release) -> Option<&ReleaseAsset> {
+    asset_for(release, "AURORA-LIVES-Android-arm64.apk")
+        .or_else(|| asset_for(release, "AURORA-LIVES-Android-arm64-DEBUG.apk"))
+}
+
+fn installer_for(release: &Release) -> Option<&ReleaseAsset> {
+    #[cfg(target_os = "android")]
+    {
+        return android_apk_for(release);
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        asset_for(release, installer_name())
+    }
+}
+
 fn suitable(release: &Release, current: &Version, include_prereleases: bool) -> bool {
     !release.draft && (include_prereleases || !release.prerelease)
         && parse_tag(&release.tag_name).is_some_and(|v| v > *current)
-        && asset_for(release, installer_name()).is_some()
+        && installer_for(release).is_some()
         && asset_for(release, CHECKSUM_FILE).is_some()
 }
 
@@ -208,7 +229,10 @@ pub async fn check_for_updates(app: AppHandle, include_prereleases: bool) -> Res
         // Rendered as plain text in React; never inserted as HTML.
         notes: release.body.as_deref().unwrap_or("").chars().take(700).collect(),
         published_at: release.published_at.clone(),
-        size_bytes: asset_for(release, installer_name()).expect("already filtered").size,
+        size_bytes: installer_for(release).expect("already filtered").size,
+        preview_apk: installer_for(release)
+            .expect("already filtered")
+            .name.ends_with("-DEBUG.apk"),
     });
     Ok(CheckResult {
         current_version: current.to_string(),
@@ -264,7 +288,7 @@ pub async fn download_update(app: AppHandle, tag: String, include_prereleases: b
     let release = newest(&releases, &current, include_prereleases)
         .filter(|release| release.tag_name == tag)
         .ok_or("Esta versão não está mais disponível como atualização. Verifique novamente.")?;
-    let asset = asset_for(release, installer_name())
+    let asset = installer_for(release)
         .ok_or("Instalador indisponível para este sistema.")?;
     let checksums = asset_for(release, CHECKSUM_FILE)
         .ok_or("A versão não possui arquivo de verificação SHA-256.")?;
@@ -551,6 +575,41 @@ mod tests {
         let manifest = format!("{}  {}", hash, a.name);
         let checksum = expected_checksum(&manifest, &a.name).unwrap();
         assert_eq!(format!("sha256:{checksum}"), format!("sha256:{hash}"));
+    }
+
+    #[test]
+    fn android_detects_published_debug_apk_when_no_signed_apk_exists() {
+        let tag = "v0.0.13-preview";
+        let r = Release {
+            tag_name: tag.into(), draft: false, prerelease: true, body: None,
+            published_at: None, assets: vec![
+                asset("AURORA-LIVES-Android-arm64-DEBUG.apk", tag, 159_893_746),
+                asset("SHA256SUMS-ANDROID.txt", tag, 103),
+            ],
+        };
+        assert_eq!(
+            android_apk_for(&r).map(|a| a.name.as_str()),
+            Some("AURORA-LIVES-Android-arm64-DEBUG.apk")
+        );
+        assert!(r.assets[0].size <= MAX_DOWNLOAD);
+    }
+
+    #[test]
+    fn android_prefers_signed_apk_and_rejects_external_or_oversized_debug_asset() {
+        let tag = "v0.0.14-preview";
+        let mut r = Release {
+            tag_name: tag.into(), draft: false, prerelease: true, body: None,
+            published_at: None, assets: vec![
+                asset("AURORA-LIVES-Android-arm64-DEBUG.apk", tag, 170_000_000),
+                asset("AURORA-LIVES-Android-arm64.apk", tag, 170_000_000),
+            ],
+        };
+        assert_eq!(android_apk_for(&r).unwrap().name, "AURORA-LIVES-Android-arm64.apk");
+        r.assets.pop();
+        r.assets[0].browser_download_url = "https://untrusted.example/app.apk".into();
+        assert!(android_apk_for(&r).is_none());
+        r.assets[0] = asset("AURORA-LIVES-Android-arm64-DEBUG.apk", tag, MAX_DOWNLOAD + 1);
+        assert!(android_apk_for(&r).is_none());
     }
 
     #[test]

@@ -23,7 +23,8 @@ export function UpdatePrompt({ updater, connected }: {
     </div>
     <strong>AURORA LIVES v{updater.available.version}</strong>
     <p>Você está usando a versão v{updater.currentVersion}. Um clique baixa, verifica e inicia a instalação.
-      {connected && ' A sala atual será encerrada.'}</p>
+      {connected && ' A sala atual será encerrada.'}
+      {updater.available.previewApk && ' Este APK de teste pode ter assinatura diferente e exigir reinstalação.'}</p>
     <div className="update-prompt-actions">
       <button className="update-prompt-later" type="button" onClick={updater.snooze}>
         <Clock3 size={15}/> Não, depois
