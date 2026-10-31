@@ -42,8 +42,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
-      - name: Testar validador de assinatura e metadados Android
-        run: python3 -m unittest discover -s scripts -p 'test_*android*.py'
+      - name: Testar validador de assinatura, metadados e instalador Android
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*android*.py'
+          python3 -m unittest discover -s scripts -p 'test_android_installer_intent.py'
 
       - name: Instalar Android SDK e NDK
         shell: bash

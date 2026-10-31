@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
+import { isAndroidRuntime } from '../platform';
 
 export type UpdateInfo = {
   tag: string;
@@ -41,7 +42,7 @@ function readableError(error: unknown): string {
 export function useOnlineUpdater() {
   const supported = isTauri();
   const [status, setStatus] = useState<UpdateStatus>(() => supported ? 'checking' : 'unsupported');
-  const [currentVersion, setCurrentVersion] = useState('0.0.22');
+  const [currentVersion, setCurrentVersion] = useState('0.0.23');
   const [available, setAvailable] = useState<UpdateInfo | null>(null);
   const [includePrereleases, setPreviews] = useState(() => storageRead(PREVIEW_KEY) !== 'false');
   const [snoozed, setSnoozed] = useState<SnoozedRelease | null>(null);
@@ -156,6 +157,9 @@ export function useOnlineUpdater() {
       // Both desktop platforms launch the validated installer then exit.
       // The installer runs independently from this process.
       await invoke('install_update');
+      // On Android the OS installer is an external UI. If the user cancels it,
+      // keep the verified package ready so installation can be retried.
+      if (isAndroidRuntime()) setStep('downloaded');
       return true;
     } catch (cause) {
       setError(readableError(cause));

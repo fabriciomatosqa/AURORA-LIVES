@@ -17,6 +17,7 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.Plugin
 import java.io.File
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 @InvokeArg
 class InstallApkArgs {
@@ -74,6 +75,12 @@ class ApkInstallerPlugin(private val activity: Activity) : Plugin(activity) {
                 "Assinatura diferente da versão instalada. Faça backup antes da migração para o APK de assinatura permanente."
             )
         }
+        // Detect invalid ZIPs before giving them to Xiaomi/Android Package Installer.
+        ZipFile(file).use { archiveZip ->
+            if (archiveZip.getEntry("AndroidManifest.xml") == null) {
+                throw IllegalArgumentException("O APK não contém um manifesto Android válido.")
+            }
+        }
     }
 
     @Command
@@ -103,27 +110,21 @@ class ApkInstallerPlugin(private val activity: Activity) : Plugin(activity) {
             val uri = FileProvider.getUriForFile(
                 activity, activity.packageName + ".aurora.fileprovider", file
             )
-            // Prefer the Android system APK installer, not a generic VIEW handler.
-            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+            // AURORA IPTV uses ACTION_VIEW with a FileProvider content URI.
+            // ACTION_INSTALL_PACKAGE causes generic parse errors on some OEM
+            // package installers, including some Xiaomi/HyperOS variants.
+            val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 clipData = ClipData.newRawUri("AURORA LIVES", uri)
             }
-            // Give the resolved installer access to this private cached APK.
+            // Android grants URI access via FLAG_GRANT_READ_URI_PERMISSION and
+            // ClipData. Explicit permission covers OEM installers that resolve
+            // the URI through an intermediary application.
             intent.resolveActivity(activity.packageManager)?.packageName?.let { packageName ->
                 activity.grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            try {
-                activity.startActivity(intent)
-            } catch (_: android.content.ActivityNotFoundException) {
-                // Some customized Android versions only provide ACTION_VIEW.
-                val fallback = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    clipData = ClipData.newRawUri("AURORA LIVES", uri)
-                }
-                activity.startActivity(fallback)
-            }
+            activity.startActivity(intent)
             // Rust deserializes the native JSON object, not a unit/null response.
             invoke.resolve(JSObject())
         } catch (error: Exception) {

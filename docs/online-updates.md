@@ -132,3 +132,10 @@ A primeira compilação da branch principal gera uma chave de **teste** própria
 A execução de pull requests não acessa o cache de assinatura; usa APK DEBUG descartável. O APK com assinatura de teste persistente é distribuído em releases como `AURORA-LIVES-Android-arm64.apk` e verificado por SHA-256, metadados e fingerprint de certificado.
 
 **Limitação importante:** o Actions Cache não é backup duradouro/seguro de chave privada e pode expirar ou ser removido. O processo replica o fluxo de testes do IPTV, mas NÃO fornece uma solução de assinatura de produção. Mantenha uma cópia privada protegida da chave se quiser continuidade garantida. A identidade criada inicialmente não é a mesma dos APKs anteriores: uma reinstalação inicial após backup poderá ser necessária. As atualizações posteriores só funcionam enquanto a mesma chave for preservada. A instalação poderá exigir confirmação do Android.
+
+
+## Correção do instalador Android (0.0.23)
+
+O erro do Android “Ocorreu um problema ao analisar o pacote” foi relatado durante a atualização 0.0.21 → 0.0.22. O download do Rust verifica tamanho exato, SHA-256 da release e arquivo integral antes de solicitar instalação. No entanto, a integração Android antiga chamava `ACTION_INSTALL_PACKAGE` em um URI do FileProvider; o AURORA IPTV comprovadamente usa `ACTION_VIEW` com MIME de APK e permissão de leitura. O LIVES passa a usar `ACTION_VIEW` e preserva as verificações de pacote, versionCode, assinatura e integridade, com validação ZIP adicional. Na volta do instalador Android, o arquivo permanece disponível para nova tentativa, sem baixar novamente. O erro foi reproduzido na interface do aparelho, não em ambiente de instrumentação; a correção precisa ser confirmada em dispositivo real.
+
+**Limitação de migração:** o APK 0.0.21 já instalado possui o fluxo antigo, e não é possível corrigir retroativamente o instalador dele. Se a atualização 0.21 → 0.23 continuar com o mesmo erro, instale manualmente a 0.23 uma vez (sem desinstalar, pois a assinatura é a mesma), e depois teste 0.23 → 0.24 pelo atualizador integrado.
