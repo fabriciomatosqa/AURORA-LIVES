@@ -14,6 +14,7 @@ import { useOnlineUpdater } from './updates/useOnlineUpdater';
 import { UpdateIndicator, UpdateSettings } from './updates/UpdateSettings';
 import { UpdatePrompt } from './updates/UpdatePrompt';
 import { isAndroidRuntime } from './platform';
+import { prepareRoomJoinSound, playRoomJoinSound, hasNewRemoteMember } from './sounds/roomJoinSound';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -226,7 +227,16 @@ export default function App() {
     setFeedback('');
     setCopied(false);
     setMobileTab('stage');
-    const current = new RoomSession(cleanName(nickname), next => setRoom(next));
+    // Unlock sound on the actual user gesture (required by Android WebView).
+    // The same original AURORA AutoFill water-droplet WAV plays only when
+    // another participant joins an already-connected room.
+    prepareRoomJoinSound();
+    let previous: RoomSnapshot = { ...emptyRoom };
+    const current = new RoomSession(cleanName(nickname), next => {
+      if (hasNewRemoteMember(previous, next)) playRoomJoinSound();
+      previous = next;
+      setRoom(next);
+    });
     session.current = current;
     void current.setQuality(qualityPreference);
     if (mode === 'host') current.startHosting(code);
@@ -412,7 +422,7 @@ export default function App() {
         <UpdateIndicator updater={updater} onClick={() => setSettingsOpen(true)}/>
         <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
           <span className="status-indicator"/>
-          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.12'}
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.13'}
         </span>
         <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
@@ -751,7 +761,7 @@ export default function App() {
           <UpdateSettings updater={updater} connected={connected}/>
           <div className="privacy-disclaimer"><LockKeyhole size={19}/><p>Esta versão usa apelidos locais, não contas. Quem souber o código poderá entrar na sala enquanto o anfitrião estiver online.</p></div>
         </div>
-        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.12</span>
+        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.13</span>
           <button onClick={() => setSettingsOpen(false)}>Concluído <ArrowRight size={17}/></button></footer>
       </section>
     </div>}

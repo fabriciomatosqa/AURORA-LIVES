@@ -1,0 +1,14 @@
+AURORA LIVES — efeito de entrada em sala
+
+Arquivo: apps/desktop/public/sounds/command_click.wav
+Cópia byte a byte do arquivo assets/command_click.wav do AURORA AutoFill.
+Obra: Water Droplet 2
+Autor: floraphonic
+Fonte: https://pixabay.com/sound-effects/water-droplet-2-165634/
+Licença: Pixabay Content License (não CC0).
+https://pixabay.com/service/license-summary/
+https://pixabay.com/service/terms/
+
+O áudio é incluído apenas como parte do aplicativo, para avisar sobre
+a entrada de outra pessoa em uma sala. Não é oferecido como biblioteca
+independente de efeitos sonoros. Nenhum arquivo do AURORA AutoFill foi modificado.
