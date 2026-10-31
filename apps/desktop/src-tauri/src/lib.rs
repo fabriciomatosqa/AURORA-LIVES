@@ -1,7 +1,6 @@
-// The same Rust/Tauri application is compiled for desktop and Android.
-// Desktop installer updates are never exposed as Android commands: an APK
-// must be installed and signed by Android's package manager instead.
-#[cfg(desktop)]
+// Native updater on all supported systems: SHA-256 is checked by Rust,
+// and Android delegates APK installation to the OS package installer.
+#[cfg(any(desktop, target_os = "android"))]
 mod updater;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -17,7 +16,10 @@ pub fn run() {
         _ => tauri::webview::PermissionResponse::Default,
     });
 
-    #[cfg(desktop)]
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(updater::android_installer_plugin());
+
+    #[cfg(any(desktop, target_os = "android"))]
     let builder = builder
         .manage(updater::UpdateService::new().expect("failed to initialize AURORA updater"))
         .invoke_handler(tauri::generate_handler![

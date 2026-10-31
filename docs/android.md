@@ -53,3 +53,14 @@ O Android precisa autorizar RECORD_AUDIO no sistema **e** conceder a permissão 
 ## Download direto na release
 
 O build na branch principal anexa também `AURORA-LIVES-Android-arm64-DEBUG.apk` à release `v0.0.7-preview` depois da geração de Windows/Linux. Este arquivo é **uma prévia de depuração**, assinado pelo runner com chave temporária: não garante atualizações sem reinstalar. O checksum separado `SHA256SUMS-ANDROID.txt` permite verificar a integridade do download.
+
+
+## Atualizações integradas (0.0.11)
+
+O AURORA LIVES verifica o GitHub imediatamente ao abrir e de 2 em 2 horas enquanto está em execução em Windows, Linux e Android. Quando encontra uma versão mais nova, pergunta se deseja atualizar. Ao aceitar, baixa o arquivo oficial, exibe progresso, confere SHA-256 e inicia a instalação nativa.
+
+Android: a versão 0.0.11 introduz o instalador de APK integrado por FileProvider. O sistema pode exigir permissão para instalar apps deste aplicativo e pedir confirmação. Não é possível burlar esse fluxo. **A assinatura do APK de atualização deve ser a mesma que assinou o aplicativo instalado.** Builds DEBUG antigos utilizam certificados temporários e NÃO podem ser atualizados para outra assinatura. Pode ser necessária uma reinstalação inicial para migrar à série com assinatura persistente.
+
+Para lançar APKs atualizáveis, configure no GitHub Actions Secrets: `ANDROID_KEY_BASE64` (JKS/keystore persistente em base64), `ANDROID_KEY_PASSWORD` e `ANDROID_KEY_ALIAS`. O workflow assina somente builds release com essa chave; sem secrets, continua emitindo APK DEBUG apenas para teste, sem alegar compatibilidade de atualização. **Jamais versionar o arquivo .jks ou a senha.**
+
+Os builds de Windows/Linux mantêm suas opções e mecanismos existentes. Os ciclos de atualização são apenas com o aplicativo aberto; não há execução em segundo plano após encerramento.

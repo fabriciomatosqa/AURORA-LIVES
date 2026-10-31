@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
-import { supportsDesktopInstaller } from '../platform';
 
 export type UpdateInfo = {
   tag: string;
@@ -17,8 +16,8 @@ export type UpdateStatus =
   | 'unsupported' | 'checking' | 'up-to-date' | 'available'
   | 'downloading' | 'downloaded' | 'installing' | 'error';
 
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
-const REMIND_AFTER_MS = 3 * 60 * 60 * 1000;
+export const CHECK_INTERVAL_MS = 2 * 60 * 60 * 1000;
+const REMIND_AFTER_MS = CHECK_INTERVAL_MS;
 const PREVIEW_KEY = 'aurora.updates.previews';
 const REMINDER_KEY = 'aurora.updates.snoozed';
 
@@ -49,9 +48,9 @@ function readableError(error: unknown): string {
  * All integrity and installer checks remain in native Rust, not JavaScript.
  */
 export function useOnlineUpdater() {
-  const supported = isTauri() && supportsDesktopInstaller();
+  const supported = isTauri();
   const [status, setStatus] = useState<UpdateStatus>(() => supported ? 'checking' : 'unsupported');
-  const [currentVersion, setCurrentVersion] = useState('0.0.10');
+  const [currentVersion, setCurrentVersion] = useState('0.0.11');
   const [available, setAvailable] = useState<UpdateInfo | null>(null);
   const [includePrereleases, setPreviews] = useState(() => storageRead(PREVIEW_KEY) !== 'false');
   const [snoozed, setSnoozed] = useState<SnoozedRelease | null>(readSnooze);

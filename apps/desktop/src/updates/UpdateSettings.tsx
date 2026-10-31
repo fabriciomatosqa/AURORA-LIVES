@@ -37,10 +37,11 @@ export function UpdateSettings({ updater, connected }: { updater: OnlineUpdater;
       <span><strong>Receber versões de teste</strong><small>Inclui versões publicadas como Pre-release no GitHub.</small></span>
     </label>
     {!supported && <div className="updates-message"><Info size={17}/>
-      <p>{isAndroidRuntime()
-        ? 'No Android, as versões de teste ainda usam assinatura temporária. Atualizações do APK exigem uma assinatura persistente e podem precisar da confirmação do próprio Android.'
-        : 'A atualização integrada funciona no aplicativo instalado para Windows ou Linux.'}</p></div>}
+      <p>As atualizações integradas funcionam somente no aplicativo nativo instalado.</p></div>}
 
+    {isAndroidRuntime() && <div className="updates-message"><Info size={17}/><p>
+      O download e a verificação do APK acontecem aqui no aplicativo. Para substituir uma versão Android instalada, as duas versões precisam ter a mesma assinatura. O Android poderá solicitar autorização para instalar.
+    </p></div>}
     {!supported && isAndroidRuntime() && <a className="updates-github-link"
       href="https://github.com/fabriciomatosqa/AURORA-LIVES/releases"
       target="_blank" rel="noopener noreferrer">Abrir APK oficial no GitHub <ExternalLink size={14}/></a>}
@@ -99,8 +100,9 @@ export function UpdateSettings({ updater, connected }: { updater: OnlineUpdater;
     </button>}
     <p className="updates-footnote">
       <ShieldCheck size={14}/> Atualizações obtidas diretamente do GitHub e conferidas com SHA-256.
-      Windows: instalação silenciosa após um clique, sujeita aos bloqueios de segurança do sistema.
-      Linux: a instalação é iniciada automaticamente, mas pode exigir senha administrativa.
+      {isAndroidRuntime()
+        ? ' No Android, o sistema pode solicitar autorização para instalar; uma assinatura persistente é obrigatória para atualizar sem desinstalar.'
+        : ' Windows: instalação silenciosa quando permitida pelo sistema. Linux: a instalação pode exigir senha administrativa.'}
     </p>
     <a className="updates-github-link" href="https://github.com/fabriciomatosqa/AURORA-LIVES/releases"
       target="_blank" rel="noopener noreferrer" aria-label="Abrir histórico de versões no GitHub">

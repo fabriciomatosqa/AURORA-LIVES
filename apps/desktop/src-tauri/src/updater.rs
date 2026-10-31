@@ -4,7 +4,7 @@
 //! Only exact assets from fabriciomatosqa/AURORA-LIVES are accepted, and the
 //! downloaded installer must match SHA256SUMS.txt from the same published release.
 //! This is an integrity check, NOT a substitute for a code-signing certificate.
-//! Installation occurs after an explicit click inside the app; no extra app dialog.
+//! Installation starts only after user approval in the app; Android may require system consent.
 use futures_util::StreamExt;
 use reqwest::{redirect::Policy, Client};
 use semver::Version;
@@ -27,7 +27,10 @@ use tokio::io::AsyncWriteExt;
 const REPOSITORY: &str = "fabriciomatosqa/AURORA-LIVES";
 const RELEASE_API: &str =
     "https://api.github.com/repos/fabriciomatosqa/AURORA-LIVES/releases?per_page=30";
+#[cfg(not(target_os = "android"))]
 const CHECKSUM_FILE: &str = "SHA256SUMS.txt";
+#[cfg(target_os = "android")]
+const CHECKSUM_FILE: &str = "SHA256SUMS-ANDROID.txt";
 const MAX_DOWNLOAD: u64 = 250 * 1024 * 1024;
 const MAX_CHECKSUM_FILE: usize = 64 * 1024;
 
@@ -129,7 +132,11 @@ fn installer_name() -> &'static str {
 fn installer_name() -> &'static str {
     "AURORA-LIVES-Linux-amd64.deb"
 }
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(target_os = "android")]
+fn installer_name() -> &'static str {
+    "AURORA-LIVES-Android-arm64.apk"
+}
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "android")))]
 fn installer_name() -> &'static str {
     "unsupported"
 }
@@ -289,6 +296,11 @@ pub async fn download_update(app: AppHandle, tag: String, include_prereleases: b
         .ok_or("Versão do GitHub inválida.")?
         .to_string();
 
+    #[cfg(target_os = "android")]
+    let dir = app.path().app_cache_dir()
+        .map_err(|e| format!("Cache Android indisponível: {e}"))?
+        .join("aurora-lives-updates");
+    #[cfg(not(target_os = "android"))]
     let dir = std::env::temp_dir().join("aurora-lives-updates");
     tokio::fs::create_dir_all(&dir)
         .await
@@ -381,8 +393,8 @@ pub async fn download_update(app: AppHandle, tag: String, include_prereleases: b
 }
 
 /// Execute only a previously downloaded and SHA-256-verified official installer.
-/// Windows installs silently for the current user. Linux runs dpkg via PolicyKit,
-/// which may require the operating system to authenticate the administrator.
+/// Windows installs silently for the current user. Linux uses PolicyKit.
+/// Android hands the verified APK to the OS installer for user consent.
 #[tauri::command]
 pub fn cancel_update_download(app: AppHandle) -> Result<(), String> {
     let state = app.state::<UpdateService>();
@@ -437,10 +449,44 @@ pub fn install_update(app: AppHandle) -> Result<(), String> {
         app.exit(0);
         Ok(())
     }
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    #[cfg(target_os = "android")]
     {
-        Err("Atualizações disponíveis apenas para Windows e Linux.".into())
+        let bridge = app.state::<AndroidInstaller>();
+        bridge.0.run_mobile_plugin::<()>(
+            "installApk",
+            ApkInstallRequest { path: stored.path.to_string_lossy().to_string() }
+        ).map_err(|e| format!("Não foi possível solicitar a instalação Android: {e}"))?;
+        // Android decides whether the package can replace the installed app.
+        // Incompatible APK signatures are never bypassed.
+        Ok(())
     }
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "android")))]
+    {
+        Err("Plataforma não compatível com atualizações nativas.".into())
+    }
+}
+
+
+#[cfg(target_os = "android")]
+struct AndroidInstaller(tauri::plugin::PluginHandle<tauri::Wry>);
+
+#[cfg(target_os = "android")]
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApkInstallRequest {
+    path: String,
+}
+
+/// Android's native installer bridge, registered only for the Android build.
+#[cfg(target_os = "android")]
+pub fn android_installer_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    tauri::plugin::Builder::new("aurora-apk")
+        .setup(|app, api| {
+            let handle = api.register_android_plugin("com.aurora.lives", "ApkInstallerPlugin")?;
+            app.manage(AndroidInstaller(handle));
+            Ok(())
+        })
+        .build()
 }
 
 #[cfg(test)]

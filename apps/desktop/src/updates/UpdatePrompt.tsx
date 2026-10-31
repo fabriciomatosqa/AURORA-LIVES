@@ -19,7 +19,7 @@ export function UpdatePrompt({ updater, connected }: {
     <div className="update-prompt-top">
       <span><Sparkles size={15}/> ATUALIZAÇÃO DISPONÍVEL</span>
       <button type="button" onClick={updater.snooze}
-        title="Lembrar novamente em 3 horas" aria-label="Adiar atualização"><X size={17}/></button>
+        title="Lembrar novamente em 2 horas" aria-label="Adiar atualização"><X size={17}/></button>
     </div>
     <strong>AURORA LIVES v{updater.available.version}</strong>
     <p>Você está usando a versão v{updater.currentVersion}. Um clique baixa, verifica e inicia a instalação.

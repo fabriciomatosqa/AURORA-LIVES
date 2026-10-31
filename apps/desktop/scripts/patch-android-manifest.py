@@ -5,6 +5,10 @@ import re
 import xml.etree.ElementTree as ET
 
 ANDROID = "http://schemas.android.com/apk/res/android"
+
+# Keep the Kotlin implementation in the repository; the generated Android
+# project is ignored, so every CI build installs this implementation explicitly.
+ANDROID_INSTALLER_PLUGIN = (Path(__file__).parent / "ApkInstallerPlugin.kt").read_text(encoding="utf-8")
 manifest = Path("src-tauri/gen/android/app/src/main/AndroidManifest.xml")
 if not manifest.is_file():
     raise SystemExit("AndroidManifest não foi gerado pelo Tauri android init.")
@@ -16,6 +20,7 @@ for permission in (
     "android.permission.RECORD_AUDIO",
     "android.permission.MODIFY_AUDIO_SETTINGS",
     "android.permission.WAKE_LOCK",
+    "android.permission.REQUEST_INSTALL_PACKAGES",
 ):
     if permission not in xml:
         missing.append(f'    <uses-permission android:name="{permission}" />')
@@ -27,9 +32,34 @@ if missing:
     xml, count = re.subn(r"(<application\b)", "\n".join(missing) + "\n    " + r"\1", xml, count=1)
     if count != 1:
         raise SystemExit("Tag <application> não encontrada.")
+# The verified APK is shared through an app-private FileProvider URI.
+if "com.aurora.lives.aurora.fileprovider" not in xml:
+    provider = (
+        '        <provider android:name="androidx.core.content.FileProvider" '
+        'android:authorities="com.aurora.lives.aurora.fileprovider" '
+        'android:exported="false" android:grantUriPermissions="true">\n'
+        '            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" '
+        'android:resource="@xml/aurora_apk_paths" />\n'
+        '        </provider>\n'
+    )
+    xml, count = re.subn(r'(</application>)', provider + r'\1', xml, count=1)
+    if count != 1:
+        raise SystemExit("Tag </application> não encontrada.")
 xml = re.sub(r'\s+android:screenOrientation="[^"]+"', "", xml)
 xml = re.sub(r'\s+android:resizeableActivity="false"', ' android:resizeableActivity="true"', xml)
 manifest.write_text(xml, encoding="utf-8")
+resources = Path("src-tauri/gen/android/app/src/main/res/xml")
+resources.mkdir(parents=True, exist_ok=True)
+(resources / "aurora_apk_paths.xml").write_text(
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    '<paths xmlns:android="http://schemas.android.com/apk/res/android">\n'
+    '    <cache-path name="aurora_verified_apks" path="aurora-lives-updates/" />\n'
+    '</paths>\n',
+    encoding="utf-8",
+)
+plugin = Path("src-tauri/gen/android/app/src/main/java/com/aurora/lives/ApkInstallerPlugin.kt")
+plugin.parent.mkdir(parents=True, exist_ok=True)
+plugin.write_text(ANDROID_INSTALLER_PLUGIN, encoding="utf-8")
 try:
     root = ET.fromstring(xml)
 except ET.ParseError as error:
@@ -39,5 +69,7 @@ if root.tag != "manifest" or root.find("application") is None:
 permissions = [entry.get(f"{{{ANDROID}}}name") for entry in root.findall("uses-permission")]
 assert "android.permission.RECORD_AUDIO" in permissions
 assert "android.permission.INTERNET" in permissions
+assert "android.permission.REQUEST_INSTALL_PACKAGES" in permissions
+assert root.find(".//provider") is not None
 assert not any(f"{{{ANDROID}}}screenOrientation" in activity.attrib for activity in root.iter("activity"))
-print("Manifesto Android: Internet, microfone e rotação permitidos.")
+print("Android: microfone, rotação, FileProvider e instalador APK nativo configurados.")

@@ -70,3 +70,14 @@ Esta implementação não utiliza a Microsoft Store, certificados pagos, servido
 - **Android:** o APK experimental continua sem atualizador integrado. Instalação silenciosa não é garantida pelo Android; são necessários assinatura persistente entre builds e API de instalação de pacotes, que pode exigir consentimento do sistema. O aplicativo oferece link direto ao GitHub até isso ser implementado. O build de APK debug criado com chave temporária pode exigir desinstalação anterior, com perda potencial dos dados locais, portanto faça backup antes de reinstalar.
 - **Migração:** binários 0.0.7 e 0.0.8 já instalados **não** recebem essa correção remotamente. É necessária uma instalação manual única da 0.0.9. Depois, testar a transição 0.0.9 → 0.0.10 em Windows e Linux; apenas a compilação não comprova a instalação silenciosa ponta-a-ponta.
 - **Integridade:** manter downloads exclusivamente de releases oficiais com SHA-256; não aceitar URLs arbitrárias e não sugerir desligar proteção do sistema.
+
+
+## Atualizações integradas (0.0.11)
+
+O AURORA LIVES verifica o GitHub imediatamente ao abrir e de 2 em 2 horas enquanto está em execução em Windows, Linux e Android. Quando encontra uma versão mais nova, pergunta se deseja atualizar. Ao aceitar, baixa o arquivo oficial, exibe progresso, confere SHA-256 e inicia a instalação nativa.
+
+Android: a versão 0.0.11 introduz o instalador de APK integrado por FileProvider. O sistema pode exigir permissão para instalar apps deste aplicativo e pedir confirmação. Não é possível burlar esse fluxo. **A assinatura do APK de atualização deve ser a mesma que assinou o aplicativo instalado.** Builds DEBUG antigos utilizam certificados temporários e NÃO podem ser atualizados para outra assinatura. Pode ser necessária uma reinstalação inicial para migrar à série com assinatura persistente.
+
+Para lançar APKs atualizáveis, configure no GitHub Actions Secrets: `ANDROID_KEY_BASE64` (JKS/keystore persistente em base64), `ANDROID_KEY_PASSWORD` e `ANDROID_KEY_ALIAS`. O workflow assina somente builds release com essa chave; sem secrets, continua emitindo APK DEBUG apenas para teste, sem alegar compatibilidade de atualização. **Jamais versionar o arquivo .jks ou a senha.**
+
+Os builds de Windows/Linux mantêm suas opções e mecanismos existentes. Os ciclos de atualização são apenas com o aplicativo aberto; não há execução em segundo plano após encerramento.
