@@ -12,7 +12,8 @@ permissions:
 # Never race first-time key creation or cache save for the same branch.
 concurrency:
   group: aurora-lives-android-signing-${{ github.ref }}
-  cancel-in-progress: false
+  # PRs never restore the signing key; superseded PR builds may be cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   updater-integration:
