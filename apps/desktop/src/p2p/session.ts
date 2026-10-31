@@ -2,7 +2,7 @@ import { Peer, type DataConnection, type MediaConnection } from 'peerjs';
 import { capturePreset, emptyMetrics, summarizeRTCStats, type QualityMode, type NetworkMetrics } from './quality';
 import {
   ROOM_CAPACITY, cleanName, cleanText, decodeWire, generateRoomCode,
-  hostPeerId, mergeMessages, normalizeRoomCode,
+  hostPeerId, isNameTaken, mergeMessages, normalizeRoomCode, validDisplayName,
   type ChatMessage, type Member, type Wire,
 } from './protocol';
 
@@ -131,6 +131,10 @@ export class RoomSession {
   }
 
   private start(role: 'host' | 'guest', code: string): void {
+    if (!validDisplayName(this.name)) {
+      this.fail('Escolha um nome de exibição diferente de Visitante antes de conectar.');
+      return;
+    }
     const normalized = normalizeRoomCode(code);
     if (!normalized) { this.fail('Código inválido. Digite os 16 caracteres do convite.'); return; }
     this.retries = 0;
@@ -206,7 +210,14 @@ export class RoomSession {
       const wire = decodeWire(raw);
       if (!wire) return;
       if (wire.type === 'reject') {
-        this.fail(wire.reason === 'full' ? 'Sala cheia (máximo de 10 pessoas).' : 'Convite recusado.');
+        const reason = wire.reason === 'full'
+          ? 'Sala cheia (máximo de 10 pessoas).'
+          : wire.reason === 'name-taken'
+            ? 'Este nome já está sendo usado nesta sala. Escolha outro nome para entrar.'
+            : wire.reason === 'name-required'
+              ? 'Informe um nome válido. O nome Visitante não é permitido.'
+              : 'Convite recusado.';
+        this.fail(reason);
         return;
       }
       if (wire.type === 'welcome') {
@@ -324,9 +335,26 @@ export class RoomSession {
     link.on('data', raw => {
       if (this.stopped) return;
       const wire = decodeWire(raw);
-      if (!wire) { link.close(); return; }
+      if (!wire) {
+        if (raw && typeof raw === 'object' && 'type' in raw && raw.type === 'join') {
+          link.send({ type: 'reject', reason: 'name-required' } satisfies Wire);
+          setTimeout(() => link.close(), 150);
+        } else link.close();
+        return;
+      }
       if (!this.connections.has(link.peer)) {
         if (wire.type !== 'join') { link.close(); return; }
+        // Host decides admission, never just the interface on a guest device.
+        if (!validDisplayName(wire.name)) {
+          link.send({ type: 'reject', reason: 'name-required' } satisfies Wire);
+          setTimeout(() => link.close(), 150);
+          return;
+        }
+        if (isNameTaken(wire.name, this.value.members, link.peer)) {
+          link.send({ type: 'reject', reason: 'name-taken' } satisfies Wire);
+          setTimeout(() => link.close(), 150);
+          return;
+        }
         if (this.connections.size >= ROOM_CAPACITY - 1) {
           link.send({ type: 'reject', reason: 'full' } satisfies Wire);
           setTimeout(() => link.close(), 150);

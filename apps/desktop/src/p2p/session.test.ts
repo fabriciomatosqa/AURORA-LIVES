@@ -129,6 +129,63 @@ describe('fluxos P2P de texto (transportador PeerJS simulado)', () => {
     two.session.stop();
   });
 
+  it('recusa quem tenta usar o nome do anfitrião com caixa ou espaço diferentes', async () => {
+    const host = make('Ana Maria'), first = make('Beatriz'), duplicate = make('aNA   MARIA');
+    host.session.startHosting(CODE);
+    await wait(() => host.snapshot().phase === 'connected');
+    first.session.startJoining(CODE);
+    await wait(() => first.snapshot().phase === 'connected');
+    duplicate.session.startJoining(CODE);
+    await wait(() => duplicate.snapshot().phase === 'error');
+    expect(duplicate.snapshot().error).toContain('já está sendo usado');
+    expect(host.snapshot().members.map(m => m.name)).toEqual(['Ana Maria', 'Beatriz']);
+    host.session.stop();
+    first.session.stop();
+    duplicate.session.stop();
+  });
+
+  it('recusa dois convidados com o mesmo nome, mas aceita um nome diferente', async () => {
+    const host = make('Host'), guest = make('Carlos'), duplicate = make('CARLOS'), other = make('Camila');
+    host.session.startHosting(CODE);
+    await wait(() => host.snapshot().phase === 'connected');
+    guest.session.startJoining(CODE);
+    await wait(() => guest.snapshot().phase === 'connected');
+    duplicate.session.startJoining(CODE);
+    await wait(() => duplicate.snapshot().phase === 'error');
+    other.session.startJoining(CODE);
+    await wait(() => other.snapshot().phase === 'connected');
+    expect(host.snapshot().members.map(m => m.name)).toEqual(['Host', 'Carlos', 'Camila']);
+    host.session.stop();
+    guest.session.stop();
+    duplicate.session.stop();
+    other.session.stop();
+  });
+
+  it('recusa nome vazio ou Visitante antes da conexão', () => {
+    const noName = make('   '), visitor = make('Visitante');
+    noName.session.startHosting(CODE);
+    visitor.session.startJoining(CODE);
+    expect(noName.snapshot().phase).toBe('error');
+    expect(visitor.snapshot().phase).toBe('error');
+    noName.session.stop();
+    visitor.session.stop();
+  });
+
+  it('libera um nome após o participante sair', async () => {
+    const host = make('Anfitrião'), first = make('Bia'), second = make('BIA');
+    host.session.startHosting(CODE);
+    await wait(() => host.snapshot().phase === 'connected');
+    first.session.startJoining(CODE);
+    await wait(() => first.snapshot().phase === 'connected');
+    first.session.stop();
+    await wait(() => host.snapshot().members.length === 1);
+    second.session.startJoining(CODE);
+    await wait(() => second.snapshot().phase === 'connected');
+    expect(host.snapshot().members.map(m => m.name)).toEqual(['Anfitrião', 'BIA']);
+    host.session.stop();
+    second.session.stop();
+  });
+
   it('recusa o décimo convidado quando já há 10 pessoas na sala', async () => {
     const host = make('Host');
     const guests = Array.from({ length: 10 }, (_, i) => make('Convidado ' + i));

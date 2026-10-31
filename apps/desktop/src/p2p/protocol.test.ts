@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanName, cleanText, decodeWire, formatRoomCode, generateRoomCode, hostPeerId, mergeMessages, normalizeRoomCode } from './protocol';
+import { cleanName, cleanText, decodeWire, formatRoomCode, generateRoomCode, hostPeerId, isNameTaken, mergeMessages, normalizeRoomCode, normalizedName, validDisplayName } from './protocol';
 
 describe('convites e identificação', () => {
   it('gera códigos secretos de 16 caracteres e formato legível', () => {
@@ -23,15 +23,32 @@ describe('convites e identificação', () => {
 describe('mensagens de terceiros', () => {
   it('só aceita mensagens dentro do limite e de autores válidos', () => {
     expect(cleanName('  Ana   Maria  ')).toBe('Ana Maria');
-    expect(cleanName('   ')).toBe('Visitante');
+    expect(cleanName('   ')).toBe('');
     expect(cleanText('  Olá  ')).toBe('Olá');
     expect(cleanText('')).toBeNull();
     expect(cleanText('x'.repeat(2001))).toBeNull();
     expect(decodeWire({ type: 'send', text: ' oi ' })).toEqual({ type: 'send', text: 'oi' });
     expect(decodeWire({ type: 'join', name: 'Ana', version: 1 })).toMatchObject({ name: 'Ana' });
     expect(decodeWire({ type: 'join', name: '', version: 1 })).toBeNull();
+    expect(decodeWire({ type: 'join', name: 'Visitante', version: 1 })).toBeNull();
+    expect(decodeWire({ type: 'join', name: ' VISITANTE ', version: 1 })).toBeNull();
     expect(decodeWire({ type: 'send', text: '<script>alert(1)</script>' })?.type).toBe('send');
     expect(decodeWire({ type: 'send', text: 'x'.repeat(4000) })).toBeNull();
+  });
+  it('exige nome próprio e recusa duplicidade com variação de caixa e acento', () => {
+    expect(validDisplayName('')).toBe(false);
+    expect(validDisplayName('   ')).toBe(false);
+    expect(validDisplayName('Visitante')).toBe(false);
+    expect(validDisplayName('  vIsItAnTe  ')).toBe(false);
+    expect(validDisplayName('Visitánte')).toBe(false);
+    expect(validDisplayName('Beatriz')).toBe(true);
+    expect(validDisplayName('a'.repeat(33))).toBe(false);
+    expect(normalizedName(' ANA   MARIA ')).toBe(normalizedName('Ana Maria'));
+    const members = [{ id: 'host', name: 'Ana Maria', host: true }];
+    expect(isNameTaken('aNA   MARIA', members)).toBe(true);
+    expect(isNameTaken('Ana Maria', members, 'host')).toBe(false);
+    expect(isNameTaken('Bia', members)).toBe(false);
+    expect(decodeWire({ type: 'reject', reason: 'name-taken' })).toEqual({ type: 'reject', reason: 'name-taken' });
   });
   it('rejeita objetos inesperados ou snapshots de tamanho excessivo', () => {
     expect(decodeWire(null)).toBeNull();

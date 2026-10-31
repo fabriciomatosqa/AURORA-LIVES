@@ -8,9 +8,11 @@ describe('nova interface AURORA LIVES', () => {
     expect(html).toContain('Criar sala agora');
     expect(html).toContain('Entrar na sala');
     expect(html).toContain('id="invite-code"');
+    expect(html).toContain('id="lobby-nickname"');
+    expect(html).toContain('Informe um nome diferente de Visitante');
     expect(html).toContain('Sem cadastro');
     expect(html).toContain('AURORA LIVES');
-    expect(html).toContain('Prévia 0.0.15');
+    expect(html).toContain('Prévia 0.0.16');
   });
 
   it('mantém a logo original e as regiões de navegação acessíveis', () => {

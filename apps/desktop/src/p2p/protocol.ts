@@ -21,7 +21,7 @@ export type Wire =
   | { type: 'ready' }
   | { type: 'send'; text: string }
   | { type: 'chat'; message: ChatMessage }
-  | { type: 'reject'; reason: 'full' | 'invalid' };
+  | { type: 'reject'; reason: 'full' | 'invalid' | 'name-taken' | 'name-required' };
 
 export function generateRoomCode(): string {
   const bytes = new Uint8Array(16);
@@ -46,7 +46,24 @@ export function hostPeerId(code: string): string {
 }
 
 export function cleanName(value: string): string {
-  return value.trim().replace(/\s+/g, ' ').slice(0, 32) || 'Visitante';
+  return value.trim().replace(/\s+/g, ' ').slice(0, 32);
+}
+
+/** Normalize for comparison: case, whitespace and diacritics are ignored. */
+export function normalizedName(value: string): string {
+  return cleanName(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR').normalize('NFKC');
+}
+
+export function validDisplayName(value: string): boolean {
+  const trimmed = value.trim().replace(/\s+/g, ' ');
+  return trimmed.length > 0 && trimmed.length <= 32 &&
+    normalizedName(trimmed) !== 'visitante';
+}
+
+export function isNameTaken(name: string, members: Member[], selfId?: string): boolean {
+  const key = normalizedName(name);
+  return members.some(m => m.id !== selfId && normalizedName(m.name) === key);
 }
 
 export function cleanText(value: string): string | null {
@@ -60,7 +77,7 @@ function record(value: unknown): value is Record<string, unknown> {
 function member(value: unknown): value is Member {
   return record(value) && typeof value.id === 'string' && value.id.length > 0
     && value.id.length < 150 && typeof value.name === 'string'
-    && value.name.length > 0 && value.name.length <= 32 && typeof value.host === 'boolean';
+    && validDisplayName(value.name) && value.name.length <= 32 && typeof value.host === 'boolean';
 }
 function chat(value: unknown): value is ChatMessage {
   return record(value) && typeof value.id === 'string' && value.id.length > 0
@@ -77,7 +94,7 @@ export function decodeWire(value: unknown): Wire | null {
   switch (value.type) {
     case 'join':
       return value.version === 1 && typeof value.name === 'string'
-        && value.name.trim().length > 0 && value.name.length <= 32
+        && validDisplayName(value.name) && value.name.length <= 32
         ? { type: 'join', version: 1, name: cleanName(value.name) } : null;
     case 'ready':
       return { type: 'ready' };
@@ -96,7 +113,8 @@ export function decodeWire(value: unknown): Wire | null {
         && value.messages.length <= 100 && value.messages.every(chat)
         ? { type: 'welcome', version: 1, members: value.members, messages: value.messages } : null;
     case 'reject':
-      return value.reason === 'full' || value.reason === 'invalid'
+      return value.reason === 'full' || value.reason === 'invalid' ||
+        value.reason === 'name-taken' || value.reason === 'name-required'
         ? { type: 'reject', reason: value.reason } : null;
     default:
       return null;

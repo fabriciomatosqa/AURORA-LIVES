@@ -7,7 +7,7 @@ import {
   Users, VideoOff, Volume2, VolumeX, Wifi, X,
 } from 'lucide-react';
 import { RoomSession, emptyRoom, type RemoteMedia, type RoomSnapshot } from './p2p/session';
-import { cleanName, formatRoomCode, normalizeRoomCode } from './p2p/protocol';
+import { cleanName, formatRoomCode, normalizeRoomCode, validDisplayName } from './p2p/protocol';
 import { capabilities, capturePreset, type QualityMode } from './p2p/quality';
 import { inviteMessage, readSavedInvites, saveInvite, SAVED_INVITES_KEY, type SavedInvite } from './p2p/invites';
 import { useOnlineUpdater } from './updates/useOnlineUpdater';
@@ -102,7 +102,7 @@ function MiniMetric({ icon, label, value, accent = false }: {
 
 export default function App() {
   const [room, setRoom] = useState<RoomSnapshot>(emptyRoom);
-  const [nickname, setNickname] = useState(() => fromStorage('aurora.nickname', 'Visitante'));
+  const [nickname, setNickname] = useState(() => fromStorage('aurora.nickname', ''));
   const [invite, setInvite] = useState('');
   const [message, setMessage] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -141,6 +141,9 @@ export default function App() {
   const broadcasting = room.screen || liveStreams.length > 0;
   const memberCount = room.members.length;
   const selectedProfile = capturePreset(room.qualityMode, memberCount);
+  const nicknameValid = validDisplayName(nickname);
+  const nicknameError = nickname.trim() && !nicknameValid
+    ? 'Esse nome não é permitido. Escolha um nome de até 32 caracteres, diferente de Visitante.' : '';
 
   useEffect(() => {
     if (isAndroid) {
@@ -212,6 +215,10 @@ export default function App() {
   }, [settingsOpen]);
 
   function openRoom(mode: 'host' | 'guest', storedCode?: string) {
+    if (!validDisplayName(nickname)) {
+      setFeedback('Informe seu nome antes de entrar. O nome Visitante não é permitido.');
+      return;
+    }
     setSidebarOpen(false);
     setInspectorOpen(false);
     if (!support.webRTC) {
@@ -404,8 +411,8 @@ export default function App() {
           <Wifi size={17} aria-hidden="true"/>
         </div>
         <button className="profile-card" onClick={() => setSettingsOpen(true)} title="Editar perfil e preferências">
-          <Avatar name={cleanName(nickname)} own/>
-          <span><strong>{cleanName(nickname)}</strong><small>Perfil local · Sem cadastro</small></span>
+          <Avatar name={cleanName(nickname) || '?'} own/>
+          <span><strong>{cleanName(nickname) || 'Defina seu nome'}</strong><small>Perfil local · Sem cadastro</small></span>
           <Settings2 size={18}/>
         </button>
       </div>
@@ -422,7 +429,7 @@ export default function App() {
         <UpdateIndicator updater={updater} onClick={() => setSettingsOpen(true)}/>
         <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
           <span className="status-indicator"/>
-          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.15'}
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.16'}
         </span>
         <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
@@ -453,12 +460,26 @@ export default function App() {
 
           <div className="lobby-section-heading"><div><span className="section-overline">COMECE POR AQUI</span><h2>Como vamos nos conectar?</h2></div><span className="small-muted">Escolha uma opção abaixo</span></div>
 
+          <section className="lobby-profile" aria-label="Identificação obrigatória para entrar na sala">
+            <label htmlFor="lobby-nickname">Seu nome na sala <span aria-hidden="true">*</span></label>
+            <div className={'nickname-input lobby-name-input' + (nicknameError ? ' name-invalid' : '')}>
+              <Avatar name={cleanName(nickname) || '?'} size="small"/>
+              <input id="lobby-nickname" type="text" autoComplete="nickname" maxLength={32}
+                placeholder="Digite seu nome (não use Visitante)"
+                value={nickname} onChange={event => updateNickname(event.target.value)}
+                aria-required="true" aria-invalid={nickname.trim() ? !nicknameValid : undefined}
+                aria-describedby="lobby-name-helper"/>
+            </div>
+            <p id="lobby-name-helper" className={'field-helper' + (nicknameError ? ' field-error' : '')}>
+              {nicknameError || (nicknameValid ? 'Nome definido. Você já pode criar ou entrar em uma sala.' : 'Informe um nome diferente de Visitante para continuar.')}
+            </p>
+          </section>
           <div className="lobby-actions">
             <section className="action-card action-create">
               <div className="action-card-top"><span className="action-illustration"><Plus size={27}/></span><span className="action-index">01 / CRIAR</span></div>
               <h3>Crie sua sala</h3>
               <p>Abra um espaço privado e compartilhe o código com quem você quiser chamar.</p>
-              <button className="action-primary" onClick={() => openRoom('host')} type="button">
+              <button className="action-primary" onClick={() => openRoom('host')} type="button" disabled={!nicknameValid}>
                 Criar sala agora <ArrowRight size={18}/>
               </button>
               <span className="action-footnote"><LockKeyhole size={13}/> O convite é exclusivo da sua sala</span>
@@ -471,7 +492,7 @@ export default function App() {
               <div className="invite-field"><Hash size={17}/><input id="invite-code" autoComplete="off" spellCheck={false}
                 placeholder="ABCD-EFGH-JKLM-NPQR" value={invite} maxLength={23}
                 onChange={event => setInvite(event.target.value.toUpperCase())}/></div>
-              <button className="action-secondary" onClick={() => openRoom('guest')} disabled={!normalizeRoomCode(invite)}>
+              <button className="action-secondary" onClick={() => openRoom('guest')} disabled={!nicknameValid || !normalizeRoomCode(invite)}>
                 Entrar na sala <ArrowRight size={17}/>
               </button>
             </section>
@@ -483,7 +504,7 @@ export default function App() {
               {savedInvites.map(item => <div className="saved-room" key={item.code}>
                 <span className="saved-room-icon"><Hash size={18}/></span>
                 <span className="saved-room-title"><strong>{item.label}</strong><small>{formatRoomCode(item.code)}</small></span>
-                <button onClick={() => openRoom('guest', item.code)} className="saved-enter">Entrar <ArrowRight size={15}/></button>
+                <button onClick={() => openRoom('guest', item.code)} className="saved-enter" disabled={!nicknameValid}>Entrar <ArrowRight size={15}/></button>
                 <button className="saved-delete icon-control" onClick={() => removeSavedInvite(item.code)}
                   aria-label={'Excluir convite ' + item.label} title="Remover convite salvo"><Trash2 size={16}/></button>
               </div>)}
@@ -749,8 +770,9 @@ export default function App() {
         </header>
         <div className="dialog-body">
           <label className="dialog-field-label" htmlFor="profile-name">Seu nome de exibição</label>
-          <div className="nickname-input"><Avatar name={cleanName(nickname)} size="small"/><input id="profile-name" value={nickname} maxLength={32}
+          <div className="nickname-input"><Avatar name={cleanName(nickname) || '?'} size="small"/><input id="profile-name" value={nickname} maxLength={32}
             onChange={event => updateNickname(event.target.value)} placeholder="Como devemos chamar você?"/></div>
+          {!nicknameValid && <p className="field-helper field-error">Escolha um nome válido diferente de Visitante antes de entrar em uma sala.</p>}
           {connected && <p className="field-helper">A alteração de nome será aplicada na próxima sala.</p>}
           <label className="dialog-field-label">Aparência</label>
           <div className="theme-selector" role="group" aria-label="Tema do aplicativo">
@@ -761,7 +783,7 @@ export default function App() {
           <UpdateSettings updater={updater} connected={connected}/>
           <div className="privacy-disclaimer"><LockKeyhole size={19}/><p>Esta versão usa apelidos locais, não contas. Quem souber o código poderá entrar na sala enquanto o anfitrião estiver online.</p></div>
         </div>
-        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.15</span>
+        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.16</span>
           <button onClick={() => setSettingsOpen(false)}>Concluído <ArrowRight size={17}/></button></footer>
       </section>
     </div>}
