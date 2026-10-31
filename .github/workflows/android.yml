@@ -14,6 +14,8 @@ jobs:
     name: Android ARM64 · release assinado ou prévia debug
     runs-on: ubuntu-latest
     timeout-minutes: 110
+    outputs:
+      signed: ${{ steps.signing.outputs.signed }}
     defaults:
       run:
         working-directory: apps/desktop
@@ -62,6 +64,9 @@ jobs:
       - name: Permissões Android, FileProvider e instalador nativo
         run: python3 scripts/patch-android-manifest.py
       - name: Configurar assinatura persistente se houver secrets
+        id: signing
+        # Never expose private signing credentials to pull request builds.
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
         shell: bash
         env:
           ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
@@ -69,7 +74,15 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           set -euo pipefail
-          if [[ -n "$ANDROID_KEY_BASE64" && -n "$ANDROID_KEY_PASSWORD" && -n "$ANDROID_KEY_ALIAS" ]]; then
+          supplied=0
+          for value in "$ANDROID_KEY_BASE64" "$ANDROID_KEY_PASSWORD" "$ANDROID_KEY_ALIAS"; do
+            [[ -z "$value" ]] || supplied=$((supplied + 1))
+          done
+          if [[ "$supplied" -ne 0 && "$supplied" -ne 3 ]]; then
+            echo 'ERRO: assinatura incompleta. Configure os três secrets Android.' >&2
+            exit 1
+          fi
+          if [[ "$supplied" -eq 3 ]]; then
             printf '%s' "$ANDROID_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/aurora-signing.jks"
             chmod 600 "$RUNNER_TEMP/aurora-signing.jks"
             {
@@ -80,23 +93,25 @@ jobs:
             chmod 600 src-tauri/gen/android/keystore.properties
             python3 scripts/configure-android-signing.py
             echo "AURORA_ANDROID_SIGNED=1" >> "$GITHUB_ENV"
-            echo 'Assinatura persistente configurada.' >> "$GITHUB_STEP_SUMMARY"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo 'Assinatura persistente configurada para este build.' >> "$GITHUB_STEP_SUMMARY"
           else
             echo "AURORA_ANDROID_SIGNED=0" >> "$GITHUB_ENV"
-            echo 'ATENÇÃO: os três secrets Android não estão configurados. APK DEBUG não garante atualização sem reinstalar.' >> "$GITHUB_STEP_SUMMARY"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo 'Nenhuma chave persistente encontrada: o APK DEBUG será somente artefato de teste, NÃO será publicado como atualização.' >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Compilar APK Android ARM64 assinado
-        if: env.AURORA_ANDROID_SIGNED == '1'
+        if: steps.signing.outputs.signed == 'true'
         run: npm run tauri -- android build --apk --target aarch64 --ci
       - name: Compilar APK ARM64 DEBUG experimental
-        if: env.AURORA_ANDROID_SIGNED != '1'
+        if: steps.signing.outputs.signed != 'true'
         run: npm run tauri -- android build --apk --debug --target aarch64 --ci
       - name: Verificar APK e identificar assinatura
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist-android
-          if [[ "$AURORA_ANDROID_SIGNED" == "1" ]]; then
+          if [[ "${{ steps.signing.outputs.signed }}" == "true" ]]; then
             apk="$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' ! -name '*debug*' ! -name '*unsigned*' -print -quit)"
             dest=AURORA-LIVES-Android-arm64.apk
           else
@@ -107,7 +122,17 @@ jobs:
           cp "$apk" "dist-android/$dest"
           test "$(stat -c %s "dist-android/$dest")" -gt 1000000
           (cd dist-android && sha256sum *.apk > SHA256SUMS-ANDROID.txt && sha256sum -c SHA256SUMS-ANDROID.txt)
+          APK_SIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          test -x "$APK_SIGNER"
+          "$APK_SIGNER" verify --print-certs --verbose "dist-android/$dest" > "$RUNNER_TEMP/aurora-apk-cert.txt"
+          cert="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/aurora-apk-cert.txt" | head -n 1)"
+          test "${#cert}" -eq 64
+          printf '%s\n' "$cert" > dist-android/ANDROID-CERT-SHA256.txt
           echo "APK: $dest" >> "$GITHUB_STEP_SUMMARY"
+          echo "Assinatura SHA-256: $cert" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$dest" == *DEBUG* ]]; then
+            echo 'Somente teste! Não publique este APK como atualização oficial.' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Disponibilizar APK de teste no GitHub Actions
         uses: actions/upload-artifact@v4
         with:
@@ -115,12 +140,14 @@ jobs:
           path: |
             apps/desktop/dist-android/*.apk
             apps/desktop/dist-android/SHA256SUMS-ANDROID.txt
+            apps/desktop/dist-android/ANDROID-CERT-SHA256.txt
           retention-days: 30
           if-no-files-found: error
 
   android-preview-asset:
     name: Anexar APK Android à release GitHub
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Never publish a transient DEBUG certificate as an in-place app update.
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && needs.android-arm64.outputs.signed == 'true'
     needs: [android-arm64]
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -156,10 +183,11 @@ jobs:
           fi
           apk="$(find android-preview -maxdepth 1 -type f -name '*.apk' -print -quit)"
           test -n "$apk"
-          gh release upload "$TAG" "$apk" android-preview/SHA256SUMS-ANDROID.txt
-          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx "$(basename "$apk")"
-          if [[ "$apk" == *DEBUG* ]]; then
-            echo 'APK DEBUG experimental: certificados podem variar entre builds.' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo 'APK assinado com a chave persistente configurada nos secrets.' >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$(basename "$apk")" != "AURORA-LIVES-Android-arm64.apk" ]]; then
+            echo "Recusando publicar APK DEBUG como atualização." >&2
+            exit 1
           fi
+          # Re-running the release workflow after configuring secrets is supported.
+          gh release upload "$TAG" --clobber "$apk"             android-preview/SHA256SUMS-ANDROID.txt             android-preview/ANDROID-CERT-SHA256.txt
+          gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx 'AURORA-LIVES-Android-arm64.apk'
+          echo 'APK release com certificado persistente publicado.' >> "$GITHUB_STEP_SUMMARY"

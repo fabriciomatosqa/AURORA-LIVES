@@ -88,3 +88,25 @@ Os builds de Windows/Linux mantêm suas opções e mecanismos existentes. Os cic
 Versões Android 0.0.12 e 0.0.13 procuravam somente `AURORA-LIVES-Android-arm64.apk`. Quando o workflow não tinha uma chave de assinatura persistente, ele publicava somente `AURORA-LIVES-Android-arm64-DEBUG.apk`, e a consulta retornava falsamente “Você já está usando a versão mais recente”. A partir da 0.0.14, o atualizador prioriza o APK assinado, mas aceita o APK DEBUG exato e seu manifesto SHA256SUMS-ANDROID.txt como alternativa experimental, sem relaxar o bloqueio de URLs externas ou hashes inválidos. O aplicativo mostra aviso sobre assinatura e dados locais.
 
 **Atenção:** a versão 0.0.12 instalada já contém a falha de consulta, então precisará de uma instalação manual única para ativar o novo mecanismo. Assinaturas diferentes impedem instalação sobre o pacote anterior. O APK DEBUG experimental NÃO é uma solução de assinatura; a correção definitiva continua dependendo de configurar um keystore persistente no workflow de releases. Nunca desative verificações de assinatura.
+
+
+## Certificado permanente e migração Android (a partir da 0.0.15)
+
+A mensagem **“Como o pacote tem um conflito com um pacote já existente”** indica que o pacote instalado e o novo APK usam certificados de assinatura diferentes, ainda que tenham o mesmo identificador `com.aurora.lives`. Nas versões 0.0.12 a 0.0.14, o GitHub Actions criou APKs DEBUG em máquinas temporárias, gerando certificados distintos. **Não é possível atualizar esses APKs uns sobre os outros apenas alterando o código.** O Android não permite desativar essa verificação.
+
+### Configuração única obrigatória
+
+1. Em um computador com JDK instalado, execute a partir da pasta `apps/desktop`: `python3 scripts/prepare-android-signing.py` (no Windows, `py scripts/prepare-android-signing.py`).
+2. Os três valores ficam em `~/.aurora-lives-signing/`: `key.base64`, `password.txt`, `alias.txt`. Guarde também `aurora-lives.jks` e a senha em um backup offline protegido. Não compartilhe esses arquivos, nem os cole em conversas, commits ou issues.
+3. No GitHub, abra `fabriciomatosqa/AURORA-LIVES` → **Settings → Secrets and variables → Actions → New repository secret** e crie:
+   - `ANDROID_KEY_BASE64`: todo o conteúdo de `key.base64`;
+   - `ANDROID_KEY_PASSWORD`: conteúdo de `password.txt`;
+   - `ANDROID_KEY_ALIAS`: conteúdo de `alias.txt`.
+4. No GitHub Actions, execute manualmente o workflow **AURORA LIVES Android — APK experimental e assinado** na branch `main`. Com a configuração concluída, o workflow publica `AURORA-LIVES-Android-arm64.apk` na release atual, com `ANDROID-CERT-SHA256.txt` para identificação pública do certificado.
+5. Faça backup dos dados que desejar preservar. Desinstale uma única vez o APK DEBUG antigo e instale manualmente a primeira versão assinada. **Não desinstale sem antes preservar dados importantes.** A partir daí, atualizações subsequentes assinadas com a mesma chave poderão ser instaladas por cima da anterior, com autorização normal do Android.
+
+Sem os três secrets, o CI ainda produz um APK DEBUG como artefato diagnóstico, mas **não o publica no GitHub Releases como uma atualização**. Isso evita induzir o usuário a baixar um APK incompatível.
+
+### Teste seguro
+
+Para testar atualização automática real, instale a primeira versão assinada (por exemplo, 0.0.15) e só então publique outra versão assinada com **a mesma keystore** (por exemplo, 0.0.16). A transição do APK DEBUG 0.0.14 diretamente para o assinado 0.0.15 não é suportada. O usuário pode ter de autorizar a instalação de apps desconhecidos e confirmar a instalação pelo Android.

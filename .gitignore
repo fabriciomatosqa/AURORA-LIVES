@@ -25,3 +25,7 @@ Thumbs.db
 !.env.example
 *.pem
 *.key
+*.jks
+*.keystore
+keystore.properties
+*android-signing*.txt
