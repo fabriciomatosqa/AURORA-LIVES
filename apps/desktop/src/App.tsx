@@ -112,6 +112,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth > 1320);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [lobbySection, setLobbySection] = useState<'home' | 'connection'>('home');
   const [membersExpanded, setMembersExpanded] = useState(true);
   const [deafened, setDeafened] = useState(false);
   const [busyMedia, setBusyMedia] = useState(false);
@@ -197,6 +198,16 @@ export default function App() {
     window.addEventListener('resize', adjustPanels);
     return () => window.removeEventListener('resize', adjustPanels);
   }, []);
+
+  // The connection meter is inside the expandable diagnostics section.
+  // Render that section first, then navigate to the real dial.
+  useEffect(() => {
+    if (!isAndroid || lobbySection !== 'connection' || !diagnosticsOpen || connected || joining) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.querySelector('.speed-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isAndroid, lobbySection, diagnosticsOpen, connected, joining]);
 
   useEffect(() => () => session.current?.stop(), []);
 
@@ -430,7 +441,7 @@ export default function App() {
         <UpdateIndicator updater={updater} onClick={() => setSettingsOpen(true)}/>
         <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
           <span className="status-indicator"/>
-          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.28'}
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.29'}
         </span>
         <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
@@ -719,9 +730,11 @@ export default function App() {
           <button onClick={() => setSettingsOpen(true)} aria-label="Abrir configurações Android">
             <Settings2 size={20}/><span>Ajustes</span></button>
         </> : <>
-          <button className="selected" onClick={() => { setSidebarOpen(false); document.querySelector('.lobby-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+          <button className={lobbySection === 'home' ? 'selected' : ''} aria-current={lobbySection === 'home' ? 'page' : undefined}
+            onClick={() => { setLobbySection('home'); setSidebarOpen(false); document.querySelector('.lobby-scroll')?.scrollTo({ top: 0, behavior: 'smooth' }); }}>
             <Home size={20}/><span>Início</span></button>
-          <button onClick={() => setDiagnosticsOpen(value => !value)} aria-pressed={diagnosticsOpen}>
+          <button className={lobbySection === 'connection' ? 'selected' : ''} aria-current={lobbySection === 'connection' ? 'page' : undefined}
+            onClick={() => { setLobbySection('connection'); setDiagnosticsOpen(true); }}>
             <Gauge size={20}/><span>Conexão</span></button>
           <button onClick={() => setSettingsOpen(true)} aria-label="Abrir configurações Android">
             <Settings2 size={20}/><span>Ajustes</span></button>

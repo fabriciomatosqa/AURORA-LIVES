@@ -1,12 +1,18 @@
-//! Measurement Lab NDT7-only speed test (WebSocket, not arbitrary HTTP servers).
-//! Results and IP come from the M-Lab server; testing is explicitly initiated.
+//! Measurement Lab NDT7-only speed test.
+//! Native phase events expose actual transfer readings to the UI while running.
 use ndt7_client::{
     client::ClientBuilder,
     spec::{Measurement, Origin},
 };
 use serde::Serialize;
-use std::{net::{IpAddr, SocketAddr}, time::Duration};
+use std::{
+    net::{IpAddr, SocketAddr},
+    time::{Duration, Instant},
+};
+use tauri::Emitter;
 use tokio::time::timeout;
+
+const PROGRESS_EVENT: &str = "aurora:connection-progress";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,6 +21,17 @@ pub struct SpeedResult {
     upload_mbps: f64,
     ping_ms: f64,
     jitter_ms: f64,
+    public_ip: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SpeedProgress {
+    phase: String,
+    download_mbps: Option<f64>,
+    upload_mbps: Option<f64>,
+    ping_ms: Option<f64>,
+    jitter_ms: Option<f64>,
     public_ip: Option<String>,
 }
 
@@ -85,39 +102,85 @@ fn median_and_jitter(samples: &[f64]) -> Option<(f64, f64)> {
     (ping.is_finite() && jitter.is_finite()).then_some((ping, jitter))
 }
 
-async fn execute() -> Result<SpeedResult, String> {
-    // Official NDT7 Locate auto-selects M-Lab hosts and signed WSS URLs.
-    // No custom HTTP server, TLS bypass, third-party IP endpoint or fallback.
+fn make_progress(phase: &str, samples: &Samples) -> SpeedProgress {
+    let latency = median_and_jitter(&samples.rtt);
+    SpeedProgress {
+        phase: phase.to_owned(),
+        download_mbps: samples.download,
+        upload_mbps: samples.upload.or(samples.upload_client),
+        ping_ms: latency.map(|v| v.0),
+        jitter_ms: latency.map(|v| v.1),
+        public_ip: samples.public_ip.clone(),
+    }
+}
+
+fn emit_progress(app: &tauri::AppHandle, phase: &str, samples: &Samples) {
+    // The event is ephemeral and contains no persisted IP or measurement history.
+    let _ = app.emit(PROGRESS_EVENT, make_progress(phase, samples));
+}
+
+async fn execute(app: &tauri::AppHandle) -> Result<SpeedResult, String> {
+    // Official NDT7 Locate selects the server and secure WSS endpoints.
+    // No custom speed server, TLS bypass, or invented fallback readings.
     let mut client = ClientBuilder::new("aurora-lives", env!("CARGO_PKG_VERSION")).build();
-    let handle = client.start_download(None).await
-        .map_err(|e| format!("Não foi possível localizar/conectar ao M-Lab para download: {e}"))?;
     let mut readings = Samples::default();
-    let mut rx = handle.rx;
-    while let Some(received) = rx.recv().await {
-        let measurement = received.map_err(|e| format!("M-Lab interrompeu o download: {e}"))?;
-        observe(&measurement, true, &mut readings);
+    emit_progress(app, "locating", &readings);
+
+    timeout(Duration::from_secs(45), async {
+        let handle = client.start_download(None).await
+            .map_err(|e| format!("Não foi possível conectar ao servidor M-Lab para download: {e}"))?;
+        emit_progress(app, "download", &readings);
+        let mut rx = handle.rx;
+        let mut last_event = Instant::now();
+        while let Some(received) = rx.recv().await {
+            let measurement = received.map_err(|e| format!("M-Lab interrompeu o download: {e}"))?;
+            observe(&measurement, true, &mut readings);
+            if last_event.elapsed() >= Duration::from_millis(220) {
+                emit_progress(app, "download", &readings);
+                last_event = Instant::now();
+            }
+        }
+        emit_progress(app, "download", &readings);
+        Ok::<(), String>(())
+    }).await.map_err(|_| "O download NDT7 ultrapassou 45 segundos. Verifique a conexão com o M-Lab e tente novamente.".to_string())??;
+
+    if readings.download.is_none() {
+        return Err("O M-Lab encerrou o download sem informar velocidade válida.".to_string());
     }
-    let handle = client.start_upload(None).await
-        .map_err(|e| format!("Não foi possível conectar ao M-Lab para upload: {e}"))?;
-    let mut rx = handle.rx;
-    while let Some(received) = rx.recv().await {
-        let measurement = received.map_err(|e| format!("M-Lab interrompeu o upload: {e}"))?;
-        observe(&measurement, false, &mut readings);
-    }
+
+    emit_progress(app, "connecting-upload", &readings);
+    timeout(Duration::from_secs(45), async {
+        let handle = client.start_upload(None).await
+            .map_err(|e| format!("Não foi possível conectar ao servidor M-Lab para upload: {e}"))?;
+        emit_progress(app, "upload", &readings);
+        let mut rx = handle.rx;
+        let mut last_event = Instant::now();
+        while let Some(received) = rx.recv().await {
+            let measurement = received.map_err(|e| format!("M-Lab interrompeu o upload: {e}"))?;
+            observe(&measurement, false, &mut readings);
+            if last_event.elapsed() >= Duration::from_millis(220) {
+                emit_progress(app, "upload", &readings);
+                last_event = Instant::now();
+            }
+        }
+        emit_progress(app, "upload", &readings);
+        Ok::<(), String>(())
+    }).await.map_err(|_| "O upload NDT7 ultrapassou 45 segundos. Verifique a conexão com o M-Lab e tente novamente.".to_string())??;
+
     let download_mbps = readings.download.ok_or("M-Lab não retornou bytes de download válidos.")?;
     let upload_mbps = readings.upload.or(readings.upload_client)
         .ok_or("M-Lab não retornou bytes de upload válidos.")?;
     let (ping_ms, jitter_ms) = median_and_jitter(&readings.rtt)
         .ok_or("M-Lab não retornou amostras suficientes de latência TCP.")?;
+    emit_progress(app, "complete", &readings);
     Ok(SpeedResult { download_mbps, upload_mbps, ping_ms, jitter_ms, public_ip: readings.public_ip })
 }
 
 #[tauri::command]
-pub async fn measure_connection() -> Result<SpeedResult, String> {
-    // An upper bound on the two NDT7 transfers including discovery, without
-    // an automatic background loop or server-selection input.
-    timeout(Duration::from_secs(95), execute()).await
-        .map_err(|_| "Tempo limite da medição M-Lab excedido.".to_string())?
+pub async fn measure_connection(app: tauri::AppHandle) -> Result<SpeedResult, String> {
+    // Overall deadline includes discovery, download and upload. No endless spinner.
+    timeout(Duration::from_secs(95), execute(&app)).await
+        .map_err(|_| "O teste M-Lab excedeu 95 segundos. Confira a internet ou tente novamente.".to_string())?
 }
 
 #[cfg(test)]
@@ -160,12 +223,30 @@ mod tests {
         assert_eq!(out.public_ip.as_deref(), Some("1.1.1.1"));
         assert_eq!(median_and_jitter(&out.rtt), Some((14.0, 3.0)));
     }
+    #[test]
+    fn progress_has_real_nullable_values_during_discovery() {
+        let out = Samples::default();
+        let p = make_progress("locating", &out);
+        assert_eq!(p.phase, "locating");
+        assert_eq!(p.download_mbps, None);
+        assert_eq!(p.upload_mbps, None);
+        assert_eq!(p.ping_ms, None);
+    }
     #[tokio::test]
-    #[ignore = "Live NDT7 test publishes runner IP & measurements in M-Lab open data"]
+    #[ignore = "Live NDT7 publishes runner IP and test results in M-Lab open data"]
     async fn mlab_live_smoke() {
-        let result = measure_connection().await.expect("M-Lab NDT7 real live test should pass");
-        assert!(result.download_mbps > 0.0 && result.upload_mbps > 0.0);
-        assert!(result.ping_ms > 0.0 && result.jitter_ms >= 0.0);
-        assert!(result.public_ip.is_some());
+        // This live smoke uses its own connection with no Tauri AppHandle.
+        // Kept ignored; the app's event transport is covered by native compilation.
+        let mut client = ClientBuilder::new("aurora-lives-smoke", "0.0.29").build();
+        let handle = client.start_download(None).await.expect("M-Lab download should connect");
+        let mut rx = handle.rx;
+        let mut samples = Samples::default();
+        while let Some(m) = rx.recv().await { observe(&m.expect("valid download"), true, &mut samples); }
+        let handle = client.start_upload(None).await.expect("M-Lab upload should connect");
+        let mut rx = handle.rx;
+        while let Some(m) = rx.recv().await { observe(&m.expect("valid upload"), false, &mut samples); }
+        assert!(samples.download.unwrap_or_default() > 0.0);
+        assert!(samples.upload.or(samples.upload_client).unwrap_or_default() > 0.0);
+        assert!(median_and_jitter(&samples.rtt).is_some());
     }
 }
