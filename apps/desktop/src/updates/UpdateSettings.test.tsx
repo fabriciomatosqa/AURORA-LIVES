@@ -7,8 +7,8 @@ import type { OnlineUpdater } from './useOnlineUpdater';
 const base = {
   supported: true,
   status: 'available',
-  currentVersion: '0.0.22',
-  available: { tag: 'v0.0.23-preview', version: '0.0.23', notes: 'Novos recursos', publishedAt: null, sizeBytes: 2500000, previewApk: false },
+  currentVersion: '0.0.23',
+  available: { tag: 'v0.0.24-preview', version: '0.0.24', notes: 'Novos recursos', publishedAt: null, sizeBytes: 2500000, previewApk: false },
   progress: { downloadedBytes: 0, totalBytes: 2500000, percent: 0 },
   progressUnavailable: false,
   error: '',
@@ -26,7 +26,7 @@ const base = {
 describe('atualizações GitHub no estilo AURORA AutoFill', () => {
   it('exibe nova versão, atualização em um clique e preferência de previews', () => {
     const html = renderToStaticMarkup(<UpdateSettings updater={base} connected={false}/>);
-    expect(html).toContain('0.0.23');
+    expect(html).toContain('0.0.24');
     expect(html).toContain('Atualizar agora');
     expect(html).toContain('Receber versões de teste');
     expect(html).toContain('Novos recursos');
@@ -43,7 +43,7 @@ describe('atualizações GitHub no estilo AURORA AutoFill', () => {
     expect(html).toContain('Sim, atualizar');
     expect(html).toContain('Não, depois');
     expect(html).toContain('GitHub');
-    expect(html).toContain('0.0.23');
+    expect(html).toContain('0.0.24');
   });
 
   it('não mostra notificação quando o lembrete foi adiado', () => {
