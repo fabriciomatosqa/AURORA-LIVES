@@ -49,6 +49,11 @@ export function UpdateSettings({ updater, connected }: { updater: OnlineUpdater;
     {supported && status === 'checking' && <div className="updates-message">
       <LoaderCircle className="updates-spin" size={17}/><p>Procurando novas versões no GitHub...</p>
     </div>}
+    {supported && status === 'android-pending' && <div className="updates-message">
+      <Info size={17}/><p>Existe uma versão mais recente para Windows ou Linux, mas ainda não há
+        APK Android assinado e compatível publicado. A atualização será oferecida quando o
+        arquivo Android estiver disponível na release.</p>
+    </div>}
     {supported && status === 'up-to-date' && <div className="updates-message updates-success">
       <CheckCircle2 size={17}/><p>Você já está usando a versão mais recente disponível.</p>
     </div>}

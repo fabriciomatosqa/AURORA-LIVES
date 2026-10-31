@@ -69,6 +69,8 @@ pub struct AvailableUpdate {
 pub struct CheckResult {
     current_version: String,
     latest: Option<AvailableUpdate>,
+    /// A newer release exists, but no signed APK has been published yet.
+    android_release_pending: bool,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -234,9 +236,15 @@ pub async fn check_for_updates(app: AppHandle, include_prereleases: bool) -> Res
             .expect("already filtered")
             .name.ends_with("-DEBUG.apk"),
     });
+    let android_release_pending = cfg!(target_os = "android") && latest.is_none()
+        && releases.iter().any(|r| {
+            !r.draft && (include_prereleases || !r.prerelease)
+                && parse_tag(&r.tag_name).is_some_and(|v| v > current)
+        });
     Ok(CheckResult {
         current_version: current.to_string(),
         latest,
+        android_release_pending,
     })
 }
 

@@ -11,10 +11,10 @@ export type UpdateInfo = {
   sizeBytes: number;
   previewApk: boolean;
 };
-export type UpdateCheck = { currentVersion: string; latest: UpdateInfo | null };
+export type UpdateCheck = { currentVersion: string; latest: UpdateInfo | null; androidReleasePending?: boolean };
 export type UpdateProgress = { downloadedBytes: number; totalBytes: number; percent: number };
 export type UpdateStatus =
-  | 'unsupported' | 'checking' | 'up-to-date' | 'available'
+  | 'unsupported' | 'checking' | 'up-to-date' | 'android-pending' | 'available'
   | 'downloading' | 'downloaded' | 'installing' | 'error';
 
 export const CHECK_INTERVAL_MS = 2 * 60 * 60 * 1000;
@@ -41,7 +41,7 @@ function readableError(error: unknown): string {
 export function useOnlineUpdater() {
   const supported = isTauri();
   const [status, setStatus] = useState<UpdateStatus>(() => supported ? 'checking' : 'unsupported');
-  const [currentVersion, setCurrentVersion] = useState('0.0.16');
+  const [currentVersion, setCurrentVersion] = useState('0.0.17');
   const [available, setAvailable] = useState<UpdateInfo | null>(null);
   const [includePrereleases, setPreviews] = useState(() => storageRead(PREVIEW_KEY) !== 'false');
   const [snoozed, setSnoozed] = useState<SnoozedRelease | null>(null);
@@ -71,7 +71,7 @@ export function useOnlineUpdater() {
       const result = await invoke<UpdateCheck>('check_for_updates', { includePrereleases });
       setCurrentVersion(result.currentVersion);
       setAvailable(result.latest);
-      setStep(result.latest ? 'available' : 'up-to-date');
+      setStep(result.latest ? 'available' : result.androidReleasePending ? 'android-pending' : 'up-to-date');
     } catch (cause) {
       setError(manual ? readableError(cause) : 'Não foi possível consultar o GitHub agora. O aplicativo continua funcionando.');
       setStep('error');

@@ -34,6 +34,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
+      - name: Testar validador de assinatura e metadados Android
+        run: python3 -m unittest discover -s scripts -p 'test_verify_android_release.py'
+
       - name: Instalar Android SDK e NDK
         shell: bash
         run: |
@@ -128,6 +131,7 @@ jobs:
           cert="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/aurora-apk-cert.txt" | head -n 1)"
           test "${#cert}" -eq 64
           printf '%s\n' "$cert" > dist-android/ANDROID-CERT-SHA256.txt
+          python3 scripts/verify-android-release.py "dist-android/$dest" "dist-android/ANDROID-CERT-SHA256.txt"
           echo "APK: $dest" >> "$GITHUB_STEP_SUMMARY"
           echo "Assinatura SHA-256: $cert" >> "$GITHUB_STEP_SUMMARY"
           if [[ "$dest" == *DEBUG* ]]; then
@@ -141,6 +145,7 @@ jobs:
             apps/desktop/dist-android/*.apk
             apps/desktop/dist-android/SHA256SUMS-ANDROID.txt
             apps/desktop/dist-android/ANDROID-CERT-SHA256.txt
+            apps/desktop/dist-android/aurora-lives-update.json
           retention-days: 30
           if-no-files-found: error
 
@@ -187,7 +192,26 @@ jobs:
             echo "Recusando publicar APK DEBUG como atualização." >&2
             exit 1
           fi
-          # Re-running the release workflow after configuring secrets is supported.
-          gh release upload "$TAG" --clobber "$apk"             android-preview/SHA256SUMS-ANDROID.txt             android-preview/ANDROID-CERT-SHA256.txt
+          # AURORA IPTV-style identity pinning: refuse any certificate
+          # change once the first permanently signed APK has been published.
+          current_cert="$(tr -d '\r\n' < android-preview/ANDROID-CERT-SHA256.txt)"
+          for previous_tag in $(gh release list --limit 60 --json tagName --jq '.[].tagName'); do
+            [[ "$previous_tag" == "$TAG" ]] && continue
+            if gh release view "$previous_tag" --json assets --jq '.assets[].name' 2>/dev/null | grep -Fxq 'ANDROID-CERT-SHA256.txt'; then
+              mkdir -p prior-signer
+              gh release download "$previous_tag" --pattern 'ANDROID-CERT-SHA256.txt' --dir prior-signer
+              old_cert="$(tr -d '\r\n' < prior-signer/ANDROID-CERT-SHA256.txt)"
+              if [[ "$current_cert" != "$old_cert" ]]; then
+                echo 'ERRO: assinatura Android diferente da release assinada anterior!' >&2
+                exit 1
+              fi
+              break
+            fi
+          done
+          # Only signed APKs from the configured persistent certificate are published.
+          gh release upload "$TAG" --clobber "$apk" \
+            android-preview/SHA256SUMS-ANDROID.txt \
+            android-preview/ANDROID-CERT-SHA256.txt \
+            android-preview/aurora-lives-update.json
           gh release view "$TAG" --json assets --jq '.assets[].name' | grep -Fx 'AURORA-LIVES-Android-arm64.apk'
           echo 'APK release com certificado persistente publicado.' >> "$GITHUB_STEP_SUMMARY"

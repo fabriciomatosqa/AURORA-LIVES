@@ -86,3 +86,16 @@ Sem os três secrets, o CI ainda produz um APK DEBUG como artefato diagnóstico,
 ### Teste seguro
 
 Para testar atualização automática real, instale a primeira versão assinada (por exemplo, 0.0.15) e só então publique outra versão assinada com **a mesma keystore** (por exemplo, 0.0.16). A transição do APK DEBUG 0.0.14 diretamente para o assinado 0.0.15 não é suportada. O usuário pode ter de autorizar a instalação de apps desconhecidos e confirmar a instalação pelo Android.
+
+
+## v0.0.17 — Fluxo Android inspirado no AURORA IPTV (sem modificar o IPTV)
+
+Comparação em leitura com o código do repositório `fabriciomatosqa/iptv-player`. O IPTV restaura sempre a mesma identidade de assinatura, publica um APK com metadados verificados e checa a assinatura do APK na hora da instalação. O LIVES agora segue o mesmo protocolo funcional, mas usa **sua própria chave privada**, armazenada em `ANDROID_KEY_BASE64`, `ANDROID_KEY_PASSWORD` e `ANDROID_KEY_ALIAS` do repositório LIVES, nunca a chave do IPTV.
+
+- O APK de atualização é `AURORA-LIVES-Android-arm64.apk` (sem DEBUG). O SHA-256 está em `SHA256SUMS-ANDROID.txt`. O manifesto `aurora-lives-update.json` publica packageName, versionName, versionCode, minSdk, tamanho, hash e hash público do certificado de assinatura, extraídos do APK real.
+- O validador de publicação recusa assinatura, packageName, versão e versionCode inconsistentes. Antes de publicar a release, confere também se a fingerprint do certificado coincide com a primeira versão permanente já publicada.
+- O aplicativo baixa apenas o arquivo oficial da release e valida SHA-256 em Rust. O instalador nativo Android confere pacote, versão crescente e **igualdade exata do certificado com o APK já instalado** antes de chamar o instalador do sistema. Se houver divergência, mostra mensagem clara sem tentar contornar a proteção.
+- Se existir release mais nova, mas **sem APK Android assinado**, a interface informa que o APK está pendente em vez de declarar falsamente que o aparelho está atualizado.
+- O APK continua sendo instalado com confirmação do sistema Android; instalação silenciosa sem privilégios especiais não é possível.
+
+**Passo indispensável:** os 3 secrets da assinatura permanente precisam ser configurados uma única vez (veja o procedimento acima). O GitHub Actions não pode recuperar o certificado de DEBUG do aparelho nem obter a chave privada de outro repositório. Não é seguro copiar/armazenar uma chave de produção no cache público do Actions. Sem a chave, a compilação Android gera apenas artefato DEBUG de teste, que não pode ser anunciado como atualização. A versão já instalada 0.0.16 com uma chave diferente precisa ser substituída uma vez após backup. Depois, teste a transição **0.0.17 assinada → 0.0.18 assinada com a mesma chave**.

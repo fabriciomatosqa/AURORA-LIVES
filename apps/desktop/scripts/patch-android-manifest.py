@@ -70,6 +70,7 @@ permissions = [entry.get(f"{{{ANDROID}}}name") for entry in root.findall("uses-p
 assert "android.permission.RECORD_AUDIO" in permissions
 assert "android.permission.INTERNET" in permissions
 assert "android.permission.REQUEST_INSTALL_PACKAGES" in permissions
-assert root.find(".//provider") is not None
+providers = root.findall(".//provider")
+assert len([p for p in providers if p.get(f"{{{ANDROID}}}authorities") == "com.aurora.lives.aurora.fileprovider"]) == 1
 assert not any(f"{{{ANDROID}}}screenOrientation" in activity.attrib for activity in root.iter("activity"))
 print("Android: microfone, rotação, FileProvider e instalador APK nativo configurados.")
