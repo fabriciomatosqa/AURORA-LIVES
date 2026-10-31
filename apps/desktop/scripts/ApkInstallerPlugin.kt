@@ -103,12 +103,28 @@ class ApkInstallerPlugin(private val activity: Activity) : Plugin(activity) {
             val uri = FileProvider.getUriForFile(
                 activity, activity.packageName + ".aurora.fileprovider", file
             )
-            val intent = Intent(Intent.ACTION_VIEW).apply {
+            // Prefer the Android system APK installer, not a generic VIEW handler.
+            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 clipData = ClipData.newRawUri("AURORA LIVES", uri)
             }
-            activity.startActivity(intent)
+            // Give the resolved installer access to this private cached APK.
+            intent.resolveActivity(activity.packageManager)?.packageName?.let { packageName ->
+                activity.grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            try {
+                activity.startActivity(intent)
+            } catch (_: android.content.ActivityNotFoundException) {
+                // Some customized Android versions only provide ACTION_VIEW.
+                val fallback = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    clipData = ClipData.newRawUri("AURORA LIVES", uri)
+                }
+                activity.startActivity(fallback)
+            }
+            // Rust deserializes the native JSON object, not a unit/null response.
             invoke.resolve(JSObject())
         } catch (error: Exception) {
             invoke.reject(error.message ?: "Falha ao abrir o instalador Android.")

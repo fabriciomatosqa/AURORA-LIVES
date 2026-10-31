@@ -484,7 +484,7 @@ pub fn install_update(app: AppHandle) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
         let bridge = app.state::<AndroidInstaller>();
-        bridge.0.run_mobile_plugin::<()>(
+        bridge.0.run_mobile_plugin::<ApkInstallResponse>(
             "installApk",
             ApkInstallRequest { path: stored.path.to_string_lossy().to_string() }
         ).map_err(|e| format!("Não foi possível solicitar a instalação Android: {e}"))?;
@@ -501,6 +501,11 @@ pub fn install_update(app: AppHandle) -> Result<(), String> {
 
 #[cfg(target_os = "android")]
 struct AndroidInstaller(tauri::plugin::PluginHandle<tauri::Wry>);
+
+// Kotlin resolves installApk with a JSON object ({}), not with JSON null.
+#[cfg(target_os = "android")]
+#[derive(serde::Deserialize)]
+struct ApkInstallResponse {}
 
 #[cfg(target_os = "android")]
 #[derive(serde::Serialize)]
