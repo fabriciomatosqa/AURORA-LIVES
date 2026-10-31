@@ -6,7 +6,7 @@ import unittest
 class AndroidInstallerIntentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = Path(__file__).with_name("ApkInstallerPlugin.kt").read_text(encoding="utf-8")
+        cls.source = Path(__file__).with_name("ApkInstallerPlugin.kt").read_text(encoding="utf-8") + Path(__file__).with_name("ApkUpdateInstaller.kt").read_text(encoding="utf-8")
 
     def test_installer_uses_view_with_content_uri_and_mime_type(self):
         source = self.source
@@ -20,10 +20,10 @@ class AndroidInstallerIntentTests(unittest.TestCase):
 
     def test_archive_is_validated_before_installation(self):
         source = self.source
-        self.assertIn('validateApk(file)', source)
+        self.assertIn('validateApk(file, version)', source)
         self.assertIn('ZipFile(file).use', source)
-        self.assertIn('archive.packageName != activity.packageName', source)
-        self.assertIn('incoming != existing', source)
+        self.assertIn('archive.packageName == context.packageName', source)
+        self.assertIn('incoming == existing', source)
 
 if __name__ == "__main__":
     unittest.main()

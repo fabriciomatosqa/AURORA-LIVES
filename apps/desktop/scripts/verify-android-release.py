@@ -11,9 +11,36 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import zipfile
 
 PACKAGE_NAME = "com.aurora.lives"
 MAX_APK = 250 * 1024 * 1024
+
+
+def verify_provider_manifest(tree: str):
+    """Inspect the packaged binary manifest, not only the source XML."""
+    providers = []
+    current = None
+    depth = 0
+    for line in tree.splitlines():
+        indent = len(line) - len(line.lstrip())
+        if current is not None and line.lstrip().startswith("E:") and indent <= depth:
+            providers.append(current)
+            current = None
+        if line.lstrip().startswith("E: provider "):
+            current, depth = {}, indent
+        if current is not None and indent == depth + 2:
+            attr = re.search(r'A: android:(name|authorities)\([^)]*\)="([^"]+)"', line)
+            if attr:
+                current[attr.group(1)] = attr.group(2)
+    if current is not None:
+        providers.append(current)
+    names = [p.get("name") for p in providers]
+    if None in names or len(names) != len(set(names)):
+        raise ValueError("Packaged APK contains duplicate provider ComponentNames")
+    updater = [p for p in providers if p.get("authorities") == PACKAGE_NAME + ".aurora.fileprovider"]
+    if len(updater) != 1 or updater[0].get("name") != PACKAGE_NAME + ".ApkFileProvider":
+        raise ValueError("Packaged APK does not contain the isolated updater provider")
 
 
 def metadata(badging: str, signature: str, apk: Path, expected_version: str, expected_signer: str) -> dict:
@@ -52,6 +79,16 @@ def main():
     tools = sdk_root / "build-tools" / "36.0.0"
     badging = subprocess.check_output([str(tools / "aapt"), "dump", "badging", str(apk)], text=True)
     sig = subprocess.check_output([str(tools / "apksigner"), "verify", "--print-certs", str(apk)], text=True)
+    subprocess.run([str(tools / "zipalign"), "-c", "-P", "16", "4", str(apk)], check=True)
+    with zipfile.ZipFile(apk) as archive:
+        if archive.testzip() is not None:
+            raise ValueError("APK ZIP CRC verification failed")
+        libs = {name.split("/")[1] for name in archive.namelist() if name.startswith("lib/") and name.endswith(".so")}
+        if libs != {"arm64-v8a"}:
+            raise ValueError(f"Unexpected release ABIs: {libs}")
+    tree = subprocess.check_output([str(tools / "aapt"), "dump", "xmltree", str(apk), "AndroidManifest.xml"], text=True)
+    verify_provider_manifest(tree)
+    (apk.parent / "ANDROID-MANIFEST-TREE.txt").write_text(tree, encoding="utf-8")
     expected = certificate.read_text(encoding="utf-8").strip()
     version = json.loads(Path("package.json").read_text(encoding="utf-8"))["version"]
     obj = metadata(badging, sig, apk, version, expected)

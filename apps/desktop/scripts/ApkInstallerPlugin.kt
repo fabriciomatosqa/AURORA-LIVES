@@ -1,134 +1,71 @@
 package com.aurora.lives
 
 import android.app.Activity
-import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.content.pm.PackageInfo
-import android.content.pm.PackageManager
 import android.provider.Settings
-import androidx.core.content.FileProvider
+import android.util.Log
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.Plugin
-import java.io.File
-import java.security.MessageDigest
-import java.util.zip.ZipFile
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 @InvokeArg
 class InstallApkArgs {
     lateinit var path: String
+    lateinit var sha256: String
+    lateinit var version: String
+    var size: Long = 0
 }
 
-/**
- * Native Android updater aligned with the AURORA IPTV validation strategy.
- * The Rust backend already verifies the trusted release URL and SHA-256.
- * Here Android additionally verifies package identity, monotonic versionCode,
- * and exact signing-certificate equality before invoking the OS installer.
- */
+/** Tauri adapter; validation and URI preparation also run in Android integration tests. */
 @TauriPlugin
 class ApkInstallerPlugin(private val activity: Activity) : Plugin(activity) {
-    private fun versionCode(info: PackageInfo): Long =
-        if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else {
-            @Suppress("DEPRECATION")
-            info.versionCode.toLong()
-        }
-
-    private fun signerDigests(info: PackageInfo): Set<String> {
-        @Suppress("DEPRECATION")
-        val signatures = if (Build.VERSION.SDK_INT >= 28) {
-            info.signingInfo?.apkContentsSigners
-        } else info.signatures
-        return signatures.orEmpty().map { sig ->
-            MessageDigest.getInstance("SHA-256").digest(sig.toByteArray())
-                .joinToString("") { byte -> "%02x".format(byte.toInt() and 255) }
-        }.toSet()
-    }
-
-    private fun validateApk(file: File) {
-        val manager = activity.packageManager
-        @Suppress("DEPRECATION")
-        val flags = if (Build.VERSION.SDK_INT >= 28)
-            PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
-        @Suppress("DEPRECATION")
-        val archive = manager.getPackageArchiveInfo(file.absolutePath, flags)
-            ?: throw IllegalArgumentException("APK inválido ou incompatível.")
-        @Suppress("DEPRECATION")
-        val installed = manager.getPackageInfo(activity.packageName, flags)
-        if (archive.packageName != activity.packageName) {
-            throw IllegalArgumentException("O pacote baixado não é do AURORA LIVES.")
-        }
-        if (versionCode(archive) <= versionCode(installed)) {
-            throw IllegalArgumentException("O APK não é mais recente que a versão instalada.")
-        }
-        if (Build.VERSION.SDK_INT >= 24 && (archive.applicationInfo?.minSdkVersion ?: Int.MAX_VALUE) > Build.VERSION.SDK_INT) {
-            throw IllegalArgumentException("Esta versão não é compatível com seu Android.")
-        }
-        val existing = signerDigests(installed)
-        val incoming = signerDigests(archive)
-        if (existing.isEmpty() || incoming != existing) {
-            throw IllegalArgumentException(
-                "Assinatura diferente da versão instalada. Faça backup antes da migração para o APK de assinatura permanente."
-            )
-        }
-        // Detect invalid ZIPs before giving them to Xiaomi/Android Package Installer.
-        ZipFile(file).use { archiveZip ->
-            if (archiveZip.getEntry("AndroidManifest.xml") == null) {
-                throw IllegalArgumentException("O APK não contém um manifesto Android válido.")
-            }
-        }
-    }
+    private val busy = AtomicBoolean(false)
 
     @Command
     fun installApk(invoke: Invoke) {
-        try {
-            val args = invoke.parseArgs(InstallApkArgs::class.java)
-            val folder = File(activity.cacheDir, "aurora-lives-updates").canonicalFile
-            val file = File(args.path).canonicalFile
-            if (!file.path.startsWith(folder.path + File.separator) ||
-                !file.name.endsWith(".apk") || !file.isFile || file.length() == 0L) {
-                invoke.reject("APK fora da pasta segura de atualizações.")
-                return
+        if (!busy.compareAndSet(false, true)) {
+            invoke.reject("Uma instalação já está sendo preparada.")
+            return
+        }
+        // Hashing and archive inspection must not block the WebView/UI thread.
+        thread(name = "aurora-apk-verify") {
+            try {
+                val args = invoke.parseArgs(InstallApkArgs::class.java)
+                val intent = ApkUpdateInstaller(activity).prepare(
+                    args.path, args.sha256, args.size, args.version
+                )
+                activity.runOnUiThread {
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                            !activity.packageManager.canRequestPackageInstalls()) {
+                            activity.startActivity(Intent(
+                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                Uri.parse("package:" + activity.packageName)
+                            ))
+                            invoke.reject("Autorize instalar aplicativos para o AURORA LIVES nas configurações do Android e tente novamente.")
+                        } else {
+                            activity.startActivity(intent)
+                            invoke.resolve(JSObject())
+                        }
+                    } catch (error: Exception) {
+                        Log.e("AuroraApkInstaller", "Falha ao abrir instalador", error)
+                        invoke.reject(error.message ?: "Falha ao abrir o instalador Android.")
+                    } finally {
+                        busy.set(false)
+                    }
+                }
+            } catch (error: Exception) {
+                Log.e("AuroraApkInstaller", "Falha na validação do APK/URI", error)
+                invoke.reject(error.message ?: "Falha ao preparar a instalação Android.")
+                busy.set(false)
             }
-
-            validateApk(file)
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-                !activity.packageManager.canRequestPackageInstalls()) {
-                activity.startActivity(Intent(
-                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                    Uri.parse("package:" + activity.packageName)
-                ))
-                invoke.reject("Autorize instalar aplicativos para o AURORA LIVES nas configurações do Android e tente novamente.")
-                return
-            }
-
-            val uri = FileProvider.getUriForFile(
-                activity, activity.packageName + ".aurora.fileprovider", file
-            )
-            // AURORA IPTV uses ACTION_VIEW with a FileProvider content URI.
-            // ACTION_INSTALL_PACKAGE causes generic parse errors on some OEM
-            // package installers, including some Xiaomi/HyperOS variants.
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                clipData = ClipData.newRawUri("AURORA LIVES", uri)
-            }
-            // Android grants URI access via FLAG_GRANT_READ_URI_PERMISSION and
-            // ClipData. Explicit permission covers OEM installers that resolve
-            // the URI through an intermediary application.
-            intent.resolveActivity(activity.packageManager)?.packageName?.let { packageName ->
-                activity.grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            activity.startActivity(intent)
-            // Rust deserializes the native JSON object, not a unit/null response.
-            invoke.resolve(JSObject())
-        } catch (error: Exception) {
-            invoke.reject(error.message ?: "Falha ao abrir o instalador Android.")
         }
     }
 }

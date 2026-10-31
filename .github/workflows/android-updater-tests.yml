@@ -1,0 +1,52 @@
+name: Android updater · device integration
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  device:
+    name: APK URI and system installer · API ${{ matrix.api }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 35]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Build disposable integration APKs with production updater sources
+        run: |
+          sdkmanager 'platforms;android-35' 'build-tools;36.0.0'
+          bash apps/desktop/scripts/android-integration/build-fixtures.sh
+      - name: Enable emulator hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Reproduce old bug and verify fixed URI, installation and data retention
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: default
+          arch: x86_64
+          disable-animations: true
+          script: python3 apps/desktop/scripts/android-integration/run-device-tests.py
+      - name: Save native test results and Package Installer logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-updater-device-api-${{ matrix.api }}
+          path: |
+            apps/desktop/scripts/android-integration/artifacts/*.txt
+            apps/desktop/scripts/android-integration/artifacts/*.xml
+            apps/desktop/scripts/android-integration/artifacts/*.json
+            apps/desktop/scripts/android-integration/app/build/reports/
+          if-no-files-found: warn

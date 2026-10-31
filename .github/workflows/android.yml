@@ -15,7 +15,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  updater-integration:
+    uses: ./.github/workflows/android-updater-tests.yml
+
   android-arm64:
+    needs: [updater-integration]
     name: Android ARM64 · release assinado ou prévia debug
     runs-on: ubuntu-latest
     timeout-minutes: 110
@@ -163,6 +167,7 @@ jobs:
             apps/desktop/dist-android/SHA256SUMS-ANDROID.txt
             apps/desktop/dist-android/ANDROID-CERT-SHA256.txt
             apps/desktop/dist-android/aurora-lives-update.json
+            apps/desktop/dist-android/ANDROID-MANIFEST-TREE.txt
           retention-days: 30
           if-no-files-found: error
 
