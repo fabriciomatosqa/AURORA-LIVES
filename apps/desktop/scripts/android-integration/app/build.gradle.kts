@@ -2,6 +2,7 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
     namespace = "com.aurora.lives"
     compileSdk = 35
+    buildToolsVersion = "36.0.0"
     defaultConfig {
         applicationId = "com.aurora.lives"
         minSdk = 26

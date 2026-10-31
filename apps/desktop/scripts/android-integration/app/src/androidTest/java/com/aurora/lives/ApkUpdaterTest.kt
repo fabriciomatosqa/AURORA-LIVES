@@ -111,6 +111,9 @@ class LegacyProviderTest {
             android.util.Log.i("AuroraLegacyProof", "Reproduced: $error")
         } catch (error: java.io.FileNotFoundException) {
             android.util.Log.i("AuroraLegacyProof", "Reproduced: $error")
+        } catch (error: SecurityException) {
+            assertTrue(error.message, error.message!!.contains("authority"))
+            android.util.Log.i("AuroraLegacyProof", "Reproduced: $error")
         }
     }
 }
