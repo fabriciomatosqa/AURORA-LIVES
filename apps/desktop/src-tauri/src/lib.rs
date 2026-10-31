@@ -2,6 +2,8 @@
 // and Android delegates APK installation to the OS package installer.
 #[cfg(any(desktop, target_os = "android"))]
 mod updater;
+#[cfg(any(desktop, target_os = "android"))]
+mod speed_test;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -26,7 +28,8 @@ pub fn run() {
             updater::check_for_updates,
             updater::download_update,
             updater::cancel_update_download,
-            updater::install_update
+            updater::install_update,
+            speed_test::measure_connection
         ]);
 
     builder
