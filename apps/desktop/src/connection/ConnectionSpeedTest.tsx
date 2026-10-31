@@ -95,7 +95,7 @@ export function ConnectionSpeedTest() {
   const isUpload = stage === 'upload';
   const dialRate = measuring
     ? (isUpload ? progress?.uploadMbps : stage === 'download' ? progress?.downloadMbps : null)
-    : result?.downloadMbps;
+    : 0;
   const status = !measuring ? (result ? 'Teste concluído' : 'Pronto para medir')
     : stage === 'connecting-download' ? 'Conectando ao servidor de download…'
     : stage === 'download' ? 'Medindo download em tempo real'

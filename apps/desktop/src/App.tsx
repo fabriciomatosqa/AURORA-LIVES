@@ -441,7 +441,7 @@ export default function App() {
         <UpdateIndicator updater={updater} onClick={() => setSettingsOpen(true)}/>
         <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
           <span className="status-indicator"/>
-          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.30'}
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.31'}
         </span>
         <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
@@ -798,7 +798,7 @@ export default function App() {
           <UpdateSettings updater={updater} connected={connected}/>
           <div className="privacy-disclaimer"><LockKeyhole size={19}/><p>Esta versão usa apelidos locais, não contas. Quem souber o código poderá entrar na sala enquanto o anfitrião estiver online.</p></div>
         </div>
-        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.30</span>
+        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.31</span>
           <button onClick={() => setSettingsOpen(false)}>Concluído <ArrowRight size={17}/></button></footer>
       </section>
     </div>}
