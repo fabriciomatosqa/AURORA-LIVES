@@ -60,6 +60,6 @@ Filename: "{app}\{#AppExeName}"; Flags: nowait runasoriginaluser; Check: IsAuror
 [Code]
 function IsAuroraUpdate: Boolean;
 begin
-  { Never auto-install without a user confirmation from the app. }
+  { The user requested this update from inside the application. }
   Result := ExpandConstant('{param:AURORAUPDATE|0}') = '1';
 end;

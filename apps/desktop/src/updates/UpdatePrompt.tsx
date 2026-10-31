@@ -3,7 +3,7 @@ import type { OnlineUpdater } from './useOnlineUpdater';
 
 /**
  * Non-blocking update prompt, inspired by AURORA AutoFill.
- * No installer or download is started until the user explicitly says Sim.
+ * One click on Sim starts the verified download and installer, without another app confirmation.
  */
 export function UpdatePrompt({ updater, connected }: {
   updater: OnlineUpdater;
@@ -12,9 +12,6 @@ export function UpdatePrompt({ updater, connected }: {
   if (!updater.notificationVisible || !updater.available) return null;
 
   function accept() {
-    if (connected && !window.confirm(
-      'Uma atualização pode encerrar sua sala e desconectar seus amigos. Deseja instalar agora?'
-    )) return;
     void updater.updateNow();
   }
 
@@ -25,7 +22,8 @@ export function UpdatePrompt({ updater, connected }: {
         title="Lembrar novamente em 3 horas" aria-label="Adiar atualização"><X size={17}/></button>
     </div>
     <strong>AURORA LIVES v{updater.available.version}</strong>
-    <p>Você está usando a versão v{updater.currentVersion}. Deseja baixar e instalar a atualização pelo GitHub?</p>
+    <p>Você está usando a versão v{updater.currentVersion}. Um clique baixa, verifica e inicia a instalação.
+      {connected && ' A sala atual será encerrada.'}</p>
     <div className="update-prompt-actions">
       <button className="update-prompt-later" type="button" onClick={updater.snooze}>
         <Clock3 size={15}/> Não, depois

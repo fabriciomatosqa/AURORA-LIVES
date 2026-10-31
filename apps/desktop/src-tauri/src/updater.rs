@@ -4,7 +4,7 @@
 //! Only exact assets from fabriciomatosqa/AURORA-LIVES are accepted, and the
 //! downloaded installer must match SHA256SUMS.txt from the same published release.
 //! This is an integrity check, NOT a substitute for a code-signing certificate.
-//! Installation is always explicitly requested by the user.
+//! Installation occurs after an explicit click inside the app; no extra app dialog.
 use futures_util::StreamExt;
 use reqwest::{redirect::Policy, Client};
 use semver::Version;
@@ -380,9 +380,9 @@ pub async fn download_update(app: AppHandle, tag: String, include_prereleases: b
     Ok(result)
 }
 
-/// Open only a previously downloaded and SHA-256-verified official installer.
-/// Windows installer runs as a separate process, then the app exits. On Linux
-/// xdg-open invokes the configured package manager which may ask for privileges.
+/// Execute only a previously downloaded and SHA-256-verified official installer.
+/// Windows installs silently for the current user. Linux runs dpkg via PolicyKit,
+/// which may require the operating system to authenticate the administrator.
 #[tauri::command]
 pub fn cancel_update_download(app: AppHandle) -> Result<(), String> {
     let state = app.state::<UpdateService>();
@@ -409,8 +409,8 @@ pub fn install_update(app: AppHandle) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        // Our Windows distribution now uses Inno Setup, like AURORA AutoFill.
-        // The user has explicitly approved this update in the application.
+        // Inno Setup runs silently after the user clicks Atualizar.
+        // System security controls may still block unsigned binaries.
         Command::new(&stored.path)
             .args(["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
                    "/SP-", "/AURORAUPDATE=1"])
@@ -421,10 +421,20 @@ pub fn install_update(app: AppHandle) -> Result<(), String> {
     }
     #[cfg(target_os = "linux")]
     {
-        Command::new("xdg-open")
+        // Never run the package manager without authorization. PolicyKit
+        // may show the OS authentication dialog; no additional app prompt.
+        if !Path::new("/usr/bin/dpkg").is_file() {
+            return Err("O gerenciador dpkg não foi encontrado em /usr/bin/dpkg.".into());
+        }
+        Command::new("pkexec")
+            .arg("/usr/bin/dpkg")
+            .arg("-i")
             .arg(&stored.path)
             .spawn()
-            .map_err(|e| format!("Não foi possível abrir o instalador Linux: {e}. Instale o pacote .deb usando o gerenciador de pacotes."))?;
+            .map_err(|e| format!(
+                "Não foi possível iniciar a atualização pelo PolicyKit: {e}.                  Verifique se o pkexec está instalado e disponível."
+            ))?;
+        app.exit(0);
         Ok(())
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]

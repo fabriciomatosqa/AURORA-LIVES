@@ -51,12 +51,13 @@ function readableError(error: unknown): string {
 export function useOnlineUpdater() {
   const supported = isTauri() && supportsDesktopInstaller();
   const [status, setStatus] = useState<UpdateStatus>(() => supported ? 'checking' : 'unsupported');
-  const [currentVersion, setCurrentVersion] = useState('0.0.7');
+  const [currentVersion, setCurrentVersion] = useState('0.0.9');
   const [available, setAvailable] = useState<UpdateInfo | null>(null);
   const [includePrereleases, setPreviews] = useState(() => storageRead(PREVIEW_KEY) !== 'false');
   const [snoozed, setSnoozed] = useState<SnoozedRelease | null>(readSnooze);
   const [clock, setClock] = useState(() => Date.now());
   const [progress, setProgress] = useState<UpdateProgress>({ downloadedBytes: 0, totalBytes: 0, percent: 0 });
+  const [progressUnavailable, setProgressUnavailable] = useState(false);
   const [error, setError] = useState('');
   const running = useRef(false);
   const step = useRef<UpdateStatus>(supported ? 'checking' : 'unsupported');
@@ -111,15 +112,22 @@ export function useOnlineUpdater() {
     running.current = true;
     setStep('downloading');
     setProgress({ downloadedBytes: 0, totalBytes: available.sizeBytes, percent: 0 });
+    setProgressUnavailable(false);
     setError('');
     let stopListening: (() => void) | undefined;
     try {
-      stopListening = await listen<UpdateProgress>('aurora:update-progress', event => {
-        const received = event.payload;
-        if (typeof received.percent === 'number' && typeof received.downloadedBytes === 'number') {
-          setProgress(received);
-        }
-      });
+      // If event permissions are unavailable in a legacy runtime, do not abort
+      // the verified native download. Show an indeterminate progress indicator instead.
+      try {
+        stopListening = await listen<UpdateProgress>('aurora:update-progress', event => {
+          const received = event.payload;
+          if (typeof received.percent === 'number' && typeof received.downloadedBytes === 'number') {
+            setProgress(received);
+          }
+        });
+      } catch {
+        setProgressUnavailable(true);
+      }
       await invoke('download_update', { tag: available.tag, includePrereleases });
       setProgress({ downloadedBytes: available.sizeBytes, totalBytes: available.sizeBytes, percent: 100 });
       setStep('downloaded');
@@ -155,9 +163,9 @@ export function useOnlineUpdater() {
     setStep('installing');
     setError('');
     try {
+      // Both desktop platforms launch the validated installer then exit.
+      // The installer runs independently from this process.
       await invoke('install_update');
-      // Windows exits after launching Inno Setup. Linux opens its package manager.
-      setStep('downloaded');
       return true;
     } catch (cause) {
       setError(readableError(cause));
@@ -168,8 +176,8 @@ export function useOnlineUpdater() {
     }
   }, [supported, setStep]);
 
-  // Like AURORA AutoFill: "Sim" downloads, validates and starts installation
-  // after a single explicit approval (a connected room is confirmed first).
+  // One explicit click triggers download, SHA-256 validation and installation.
+  // Active calls may be disconnected because the app exits during installation.
   const updateNow = useCallback(async () => {
     if (await download()) await install();
   }, [download, install]);
@@ -185,7 +193,7 @@ export function useOnlineUpdater() {
     (!snoozed || snoozed.tag !== available?.tag || snoozed.until <= clock);
 
   return {
-    supported, status, currentVersion, available, progress, error,
+    supported, status, currentVersion, available, progress, progressUnavailable, error,
     includePrereleases, setIncludePrereleases,
     notificationVisible, snooze, check, download, cancel, install, updateNow
   };

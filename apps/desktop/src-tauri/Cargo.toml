@@ -1,6 +1,6 @@
 [package]
 name = "aurora-lives"
-version = "0.0.8"
+version = "0.0.9"
 description = "AURORA LIVES desktop"
 authors = ["AURORA"]
 edition = "2021"

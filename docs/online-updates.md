@@ -59,3 +59,14 @@ Esta implementação não utiliza a Microsoft Store, certificados pagos, servido
 
 
 **Transição NSIS → Inno Setup:** a versão 0.0.5 ainda abre o instalador no modo interativo. Ao atualizar da 0.0.5 para a 0.0.6, conclua o assistente Inno Setup manualmente. A partir da 0.0.6, o comando automático do Inno Setup é usado com confirmação prévia no aplicativo. Uma versão antiga instalada por NSIS pode continuar aparecendo separadamente em Aplicativos instalados.
+
+
+## Correção do fluxo em um clique (0.0.9)
+
+- **Causa:** a distribuição 0.0.7/0.0.8 foi compilada sem autorização `core:event:allow-listen` e `core:event:allow-unlisten`; a tentativa de acompanhar `aurora:update-progress` falhava com `Command plugin:event|listen not allowed by ACL` antes mesmo de começar o download.
+- **Correção:** capability explícita para a janela principal e fallback de progresso indeterminado caso ouvir eventos seja bloqueado. Em Configurações e no aviso de nova versão, um clique inicia download, verificação SHA-256 e execução do instalador verificado. Botões de confirmação internos foram removidos. A tela exibe o percentual enquanto o download acontece.
+- **Windows:** Inno Setup recebe `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /AURORAUPDATE=1`; não precisa confirmar novamente no aplicativo. Proteções de segurança do Windows podem bloquear executáveis não assinados.
+- **Linux (Debian/Ubuntu):** inicia `pkexec /usr/bin/dpkg -i <arquivo-verificado>` após o download. O programa não apresenta uma segunda confirmação, mas o PolicyKit do sistema pode exigir autenticação administrativa. Sem permissões suficientes, nenhum aplicativo pode instalar um .deb silenciosamente em nível de sistema.
+- **Android:** o APK experimental continua sem atualizador integrado. Instalação silenciosa não é garantida pelo Android; são necessários assinatura persistente entre builds e API de instalação de pacotes, que pode exigir consentimento do sistema. O aplicativo oferece link direto ao GitHub até isso ser implementado. O build de APK debug criado com chave temporária pode exigir desinstalação anterior, com perda potencial dos dados locais, portanto faça backup antes de reinstalar.
+- **Migração:** binários 0.0.7 e 0.0.8 já instalados **não** recebem essa correção remotamente. É necessária uma instalação manual única da 0.0.9. Depois, testar a transição 0.0.9 → 0.0.10 em Windows e Linux; apenas a compilação não comprova a instalação silenciosa ponta-a-ponta.
+- **Integridade:** manter downloads exclusivamente de releases oficiais com SHA-256; não aceitar URLs arbitrárias e não sugerir desligar proteção do sistema.

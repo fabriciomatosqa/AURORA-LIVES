@@ -7,9 +7,10 @@ import type { OnlineUpdater } from './useOnlineUpdater';
 const base = {
   supported: true,
   status: 'available',
-  currentVersion: '0.0.7',
-  available: { tag: 'v0.0.7-preview', version: '0.0.7', notes: 'Novos recursos', publishedAt: null, sizeBytes: 2500000 },
+  currentVersion: '0.0.8',
+  available: { tag: 'v0.0.9-preview', version: '0.0.9', notes: 'Novos recursos', publishedAt: null, sizeBytes: 2500000 },
   progress: { downloadedBytes: 0, totalBytes: 2500000, percent: 0 },
+  progressUnavailable: false,
   error: '',
   includePrereleases: true,
   setIncludePrereleases: (_enabled: boolean) => {},
@@ -23,10 +24,10 @@ const base = {
 } satisfies OnlineUpdater;
 
 describe('atualizações GitHub no estilo AURORA AutoFill', () => {
-  it('exibe nova versão, botão de download e preferência de previews', () => {
+  it('exibe nova versão, atualização em um clique e preferência de previews', () => {
     const html = renderToStaticMarkup(<UpdateSettings updater={base} connected={false}/>);
-    expect(html).toContain('0.0.7');
-    expect(html).toContain('Baixar atualização');
+    expect(html).toContain('0.0.9');
+    expect(html).toContain('Atualizar agora');
     expect(html).toContain('Receber versões de teste');
     expect(html).toContain('Novos recursos');
   });
@@ -36,7 +37,7 @@ describe('atualizações GitHub no estilo AURORA AutoFill', () => {
     expect(html).toContain('Sim, atualizar');
     expect(html).toContain('Não, depois');
     expect(html).toContain('GitHub');
-    expect(html).toContain('0.0.7');
+    expect(html).toContain('0.0.9');
   });
 
   it('não mostra notificação quando o lembrete foi adiado', () => {
@@ -51,15 +52,21 @@ describe('atualizações GitHub no estilo AURORA AutoFill', () => {
     expect(html).toContain('Cancelar download');
   });
 
+  it('continua o download quando o evento de progresso não está autorizado', () => {
+    const html = renderToStaticMarkup(<UpdateSettings updater={{ ...base, status: 'downloading', progressUnavailable: true }} connected={false}/>);
+    expect(html).toContain('Baixando e verificando integridade...');
+    expect(html).not.toContain('aria-valuenow="0"');
+  });
+
   it('não permite atualizar no preview de navegador', () => {
     const html = renderToStaticMarkup(<UpdateSettings updater={{ ...base, supported: false, status: 'unsupported' }} connected={false}/>);
     expect(html).toContain('aplicativo instalado');
     expect(html).not.toContain('Baixar atualização');
   });
 
-  it('avisa que a instalação encerra uma sala conectada', () => {
+  it('avisa que atualizar encerra uma sala conectada sem exigir novo diálogo', () => {
     const html = renderToStaticMarkup(<UpdateSettings updater={{ ...base, status: 'downloaded' }} connected/>);
-    expect(html).toContain('encerrar a sala');
-    expect(html).toContain('Instalar atualização');
+    expect(html).toContain('sala atual será encerrada');
+    expect(html).toContain('Tentar instalação novamente');
   });
 });
