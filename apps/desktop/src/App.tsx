@@ -24,7 +24,7 @@ function fromStorage(key: string, fallback: string): string {
 function Crystal({ size = 42, className = '' }: { size?: number; className?: string }) {
   return <img
     className={'crystal ' + className}
-    src="/aurora-mark.webp"
+    src="/aurora-mark.png"
     width={size}
     height={size}
     alt="Emblema cristalino original da AURORA"
@@ -412,7 +412,7 @@ export default function App() {
         <UpdateIndicator updater={updater} onClick={() => setSettingsOpen(true)}/>
         <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
           <span className="status-indicator"/>
-          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.7'}
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.8'}
         </span>
         <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
