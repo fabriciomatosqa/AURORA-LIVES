@@ -19,7 +19,6 @@ export type UpdateStatus =
 export const CHECK_INTERVAL_MS = 2 * 60 * 60 * 1000;
 const REMIND_AFTER_MS = CHECK_INTERVAL_MS;
 const PREVIEW_KEY = 'aurora.updates.previews';
-const REMINDER_KEY = 'aurora.updates.snoozed';
 
 type SnoozedRelease = { tag: string; until: number };
 
@@ -28,15 +27,6 @@ function storageRead(key: string): string | null {
 }
 function storageWrite(key: string, value: string): void {
   try { localStorage.setItem(key, value); } catch { /* Optional setting */ }
-}
-function readSnooze(): SnoozedRelease | null {
-  try {
-    const value = JSON.parse(storageRead(REMINDER_KEY) || 'null') as unknown;
-    if (!value || typeof value !== 'object') return null;
-    const record = value as Partial<SnoozedRelease>;
-    if (typeof record.tag !== 'string' || typeof record.until !== 'number' || !Number.isFinite(record.until)) return null;
-    return { tag: record.tag, until: record.until };
-  } catch { return null; }
 }
 function readableError(error: unknown): string {
   if (typeof error === 'string') return error;
@@ -53,7 +43,7 @@ export function useOnlineUpdater() {
   const [currentVersion, setCurrentVersion] = useState('0.0.11');
   const [available, setAvailable] = useState<UpdateInfo | null>(null);
   const [includePrereleases, setPreviews] = useState(() => storageRead(PREVIEW_KEY) !== 'false');
-  const [snoozed, setSnoozed] = useState<SnoozedRelease | null>(readSnooze);
+  const [snoozed, setSnoozed] = useState<SnoozedRelease | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const [progress, setProgress] = useState<UpdateProgress>({ downloadedBytes: 0, totalBytes: 0, percent: 0 });
   const [progressUnavailable, setProgressUnavailable] = useState(false);
@@ -185,7 +175,7 @@ export function useOnlineUpdater() {
     if (!available) return;
     const choice = { tag: available.tag, until: Date.now() + REMIND_AFTER_MS };
     setSnoozed(choice);
-    storageWrite(REMINDER_KEY, JSON.stringify(choice));
+    // An app restart always checks and offers the update again.
   }, [available]);
 
   const notificationVisible = supported && status === 'available' && Boolean(available) &&
