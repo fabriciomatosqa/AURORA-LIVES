@@ -13,7 +13,7 @@ if "auroraRelease" in content:
     raise SystemExit("Assinatura já configurada.")
 signing = """    signingConfigs {
         create("auroraRelease") {
-            val keystoreProperties = java.util.Properties()
+            val keystoreProperties = Properties()
             val propertiesFile = rootProject.file("keystore.properties")
             require(propertiesFile.isFile) { "Missing keystore.properties" }
             propertiesFile.inputStream().use { keystoreProperties.load(it) }
@@ -32,5 +32,9 @@ signing = """    signingConfigs {
         }
     }
 """
+# Inside the Android Gradle DSL, `java` resolves to the Gradle Java extension.
+# Import the type explicitly so Kotlin does not confuse it with that extension.
+if "import java.util.Properties" not in content:
+    content = "import java.util.Properties\n" + content
 gradle.write_text(content.replace(anchor, signing + "\n" + anchor, 1), encoding="utf-8")
 print("Build Android release assinado com keystore de secrets.")
