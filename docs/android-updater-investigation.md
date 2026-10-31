@@ -48,7 +48,7 @@ The AURORA IPTV was inspected read-only. It has one update provider and uses a n
 - Run native verification on a worker thread and launch the system UI on the Activity thread.
 - Keep the APK in app-private cache with the original narrow FileProvider path and temporary read permission.
 - Record native validation failures and URI diagnostics in Logcat under `AuroraApkInstaller`.
-- Gate the production ARM64 job on on-device integration tests, and inspect the final APK's packaged manifest, signature, alignment, CRC and ABI before publication.
+- Gate production APK publication on on-device integration tests, and inspect the final APK's packaged manifest, signature, alignment, CRC and ABI before publication.
 
 The startup check, two-hour timer, explicit user acceptance, progress bar and retry flow remain in the existing updater hook. Android may suspend timers while the process is stopped or sleeping; this implementation does not add a background scheduling service.
 

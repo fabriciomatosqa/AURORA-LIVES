@@ -19,7 +19,6 @@ jobs:
     uses: ./.github/workflows/android-updater-tests.yml
 
   android-arm64:
-    needs: [updater-integration]
     name: Android ARM64 · release assinado ou prévia debug
     runs-on: ubuntu-latest
     timeout-minutes: 110
@@ -175,7 +174,7 @@ jobs:
     name: Anexar APK Android à release GitHub
     # Never publish a transient DEBUG certificate as an in-place app update.
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && needs.android-arm64.outputs.signed == 'true'
-    needs: [android-arm64]
+    needs: [android-arm64, updater-integration]
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
