@@ -99,3 +99,12 @@ Comparação em leitura com o código do repositório `fabriciomatosqa/iptv-play
 - O APK continua sendo instalado com confirmação do sistema Android; instalação silenciosa sem privilégios especiais não é possível.
 
 **Passo indispensável:** os 3 secrets da assinatura permanente precisam ser configurados uma única vez (veja o procedimento acima). O GitHub Actions não pode recuperar o certificado de DEBUG do aparelho nem obter a chave privada de outro repositório. Não é seguro copiar/armazenar uma chave de produção no cache público do Actions. Sem a chave, a compilação Android gera apenas artefato DEBUG de teste, que não pode ser anunciado como atualização. A versão já instalada 0.0.16 com uma chave diferente precisa ser substituída uma vez após backup. Depois, teste a transição **0.0.17 assinada → 0.0.18 assinada com a mesma chave**.
+
+
+## Assinatura Android automática de TESTE (mesma estratégia do AURORA IPTV)
+
+A primeira compilação da branch principal gera uma chave de **teste** própria em `apps/desktop/.signing`, excluída do Git. O GitHub Actions a conserva no cache específico `aurora-lives-android-test-signing-v1` e a restaura nos builds seguintes. Se o cache se perder, o job usa os três Secrets da assinatura original, quando disponíveis. Se já foi publicado um APK com assinatura e não houver a chave original, o workflow **falha** em vez de criar uma assinatura incompatível.
+
+A execução de pull requests não acessa o cache de assinatura; usa APK DEBUG descartável. O APK com assinatura de teste persistente é distribuído em releases como `AURORA-LIVES-Android-arm64.apk` e verificado por SHA-256, metadados e fingerprint de certificado.
+
+**Limitação importante:** o Actions Cache não é backup duradouro/seguro de chave privada e pode expirar ou ser removido. O processo replica o fluxo de testes do IPTV, mas NÃO fornece uma solução de assinatura de produção. Mantenha uma cópia privada protegida da chave se quiser continuidade garantida. A identidade criada inicialmente não é a mesma dos APKs anteriores: uma reinstalação inicial após backup poderá ser necessária. As atualizações posteriores só funcionam enquanto a mesma chave for preservada. A instalação poderá exigir confirmação do Android.

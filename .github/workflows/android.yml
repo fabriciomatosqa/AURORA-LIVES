@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# Never race first-time key creation or cache save for the same branch.
+concurrency:
+  group: aurora-lives-android-signing-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   android-arm64:
     name: Android ARM64 · release assinado ou prévia debug
@@ -35,7 +40,7 @@ jobs:
         with:
           targets: aarch64-linux-android
       - name: Testar validador de assinatura e metadados Android
-        run: python3 -m unittest discover -s scripts -p 'test_verify_android_release.py'
+        run: python3 -m unittest discover -s scripts -p 'test_*android*.py'
 
       - name: Instalar Android SDK e NDK
         shell: bash
@@ -66,43 +71,33 @@ jobs:
         run: npm run tauri -- android init --ci --skip-targets-install
       - name: Permissões Android, FileProvider e instalador nativo
         run: python3 scripts/patch-android-manifest.py
-      - name: Configurar assinatura persistente se houver secrets
+      # Same signing-key lifecycle as AURORA IPTV: restore from Actions cache,
+      # recover from repository Secrets, or bootstrap ONLY the first release.
+      # PR builds cannot access the key and remain disposable DEBUG builds.
+      - name: Recuperar assinatura de teste persistente
+        id: signing-cache
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/desktop/.signing
+          key: aurora-lives-android-test-signing-v1
+
+      - name: Configurar assinatura de teste Android
         id: signing
-        # Never expose private signing credentials to pull request builds.
         if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           set -euo pipefail
-          supplied=0
-          for value in "$ANDROID_KEY_BASE64" "$ANDROID_KEY_PASSWORD" "$ANDROID_KEY_ALIAS"; do
-            [[ -z "$value" ]] || supplied=$((supplied + 1))
-          done
-          if [[ "$supplied" -ne 0 && "$supplied" -ne 3 ]]; then
-            echo 'ERRO: assinatura incompleta. Configure os três secrets Android.' >&2
-            exit 1
-          fi
-          if [[ "$supplied" -eq 3 ]]; then
-            printf '%s' "$ANDROID_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/aurora-signing.jks"
-            chmod 600 "$RUNNER_TEMP/aurora-signing.jks"
-            {
-              printf 'password=%s\n' "$ANDROID_KEY_PASSWORD"
-              printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
-              printf 'storeFile=%s\n' "$RUNNER_TEMP/aurora-signing.jks"
-            } > src-tauri/gen/android/keystore.properties
-            chmod 600 src-tauri/gen/android/keystore.properties
-            python3 scripts/configure-android-signing.py
-            echo "AURORA_ANDROID_SIGNED=1" >> "$GITHUB_ENV"
-            echo "signed=true" >> "$GITHUB_OUTPUT"
-            echo 'Assinatura persistente configurada para este build.' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "AURORA_ANDROID_SIGNED=0" >> "$GITHUB_ENV"
-            echo "signed=false" >> "$GITHUB_OUTPUT"
-            echo 'Nenhuma chave persistente encontrada: o APK DEBUG será somente artefato de teste, NÃO será publicado como atualização.' >> "$GITHUB_STEP_SUMMARY"
-          fi
+          python3 scripts/ci-android-signing.py
+          python3 scripts/configure-android-signing.py
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo 'Assinatura de teste Android persistente configurada.' >> "$GITHUB_STEP_SUMMARY"
       - name: Compilar APK Android ARM64 assinado
         if: steps.signing.outputs.signed == 'true'
         run: npm run tauri -- android build --apk --target aarch64 --ci
@@ -137,6 +132,15 @@ jobs:
           if [[ "$dest" == *DEBUG* ]]; then
             echo 'Somente teste! Não publique este APK como atualização oficial.' >> "$GITHUB_STEP_SUMMARY"
           fi
+      # Save the private TEST key to repository-scoped Actions cache.
+      # If evicted, only the identical key from Secrets can restore releases.
+      - name: Salvar chave de teste entre compilações
+        if: steps.signing.outputs.signed == 'true' && steps.signing-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/desktop/.signing
+          key: aurora-lives-android-test-signing-v1
+
       - name: Disponibilizar APK de teste no GitHub Actions
         uses: actions/upload-artifact@v4
         with:
