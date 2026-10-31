@@ -512,3 +512,9 @@ a { color: var(--accent-blue); }
 @media(prefers-reduced-motion:reduce) {
  .speed-dial.measuring, .speed-dial.measuring .speed-dial-inside, .speed-spin { animation:none; }
 }
+
+/* Consentimento específico do Measurement Lab: resultados publicados pelo provedor. */
+.speed-consent { display:flex; flex-direction:column; gap:7px; margin: 16px 0; padding: 13px; border:1px solid var(--line-strong); border-radius: 12px; background:var(--surface-muted); }
+.speed-consent label { display:flex; gap:10px; align-items:flex-start; cursor:pointer; font-size:12px; line-height:1.6; color:var(--text-soft); }
+.speed-consent input { width:16px; height:16px; margin-top:3px; accent-color:var(--accent); flex-shrink:0; }
+.speed-consent a { color:var(--accent); font-size:12px; align-self:flex-start; }

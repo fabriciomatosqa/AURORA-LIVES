@@ -1,0 +1,34 @@
+name: Measurement Lab NDT7 — teste real
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop/src-tauri/src/speed_test.rs'
+      - 'apps/desktop/src-tauri/Cargo.toml'
+      - '.github/workflows/mlab-live-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-ndt7:
+    name: M-Lab real — download, upload, RTT e IP
+    runs-on: ubuntu-22.04
+    timeout-minutes: 18
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Dependências Linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev patchelf
+      - name: Preparar projeto e logo original
+        run: |
+          npm install --no-audit --no-fund
+          npm run icons
+      - name: Verificar M-Lab NDT7 REAL sem valores simulados
+        run: cargo test --manifest-path src-tauri/Cargo.toml mlab_live_smoke -- --ignored --nocapture

@@ -42,7 +42,7 @@ function readableError(error: unknown): string {
 export function useOnlineUpdater() {
   const supported = isTauri();
   const [status, setStatus] = useState<UpdateStatus>(() => supported ? 'checking' : 'unsupported');
-  const [currentVersion, setCurrentVersion] = useState('0.0.27');
+  const [currentVersion, setCurrentVersion] = useState('0.0.28');
   const [available, setAvailable] = useState<UpdateInfo | null>(null);
   const [includePrereleases, setPreviews] = useState(() => storageRead(PREVIEW_KEY) !== 'false');
   const [snoozed, setSnoozed] = useState<SnoozedRelease | null>(null);

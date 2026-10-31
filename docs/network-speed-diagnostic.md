@@ -1,9 +1,26 @@
-# AURORA LIVES — Medidor de rede manual
+# AURORA LIVES — Teste de conexão M-Lab NDT7 (v0.0.28)
 
-Comando Tauri nativo Rust `measure_connection`, independente do atualizador Android. Medições reais sobre HTTPS até `https://speed.cloudflare.com/__down` e `/__up`: 2 + 18 MB download, 1 + 8 MB upload. Limites: conexão 8 s e requisição 25 s. HTTP ping: mediana de 6 chamadas de zero bytes, jitter como média da diferença consecutiva absoluta. **Não** representa ping ICMP nem qualidade específica do WebRTC e não mede perda de pacotes.
+## Provedor único
 
-IP externo observado por `https://speed.cloudflare.com/meta`, validado como endereço público; se não puder ser consultado, mostrar Indisponível. Nunca substituir pelo IP LAN. O serviço externo recebe as requisições de teste, não os resultados salvos no AURORA.
+Somente **Measurement Lab (M-Lab)** via cliente Rust NDT7 0.3.0 com WebSockets seguros. A descoberta automática usa `https://locate.measurementlab.net/v2/nearest/ndt/ndt7` e retorna URLs de servidor e token transitório. Não existe servidor HTTP personalizável, Cloudflare para velocidade nem serviço IPify. Não desabilitar TLS.
 
-O frontend só invoca o comando após consentimento ao clicar Medir agora; não há consultas automáticas. Histórico local limitado a 5 registros com somente `downloadMbps`, `uploadMbps`, `pingMs`. Não armazenar horário, IP nem jitter no histórico. A classificação Excelente/Boa/Regular/Ruim é orientativa.
+## Métricas
 
-**Não modificar** o fluxo comprovado de atualização Android v0.0.25/26: `ApkFileProvider`, `ApkUpdateInstaller`, validação SHA-256/URI, assinatura e workflows de instrumentação.
+- Download: contadores AppInfo do cliente NDT7 em bytes e microssegundos.
+- Upload: TCPInfo.BytesReceived/ElapsedTime retornados pelo M-Lab; fallback a contadores locais se ausentes.
+- Ping: mediana de amostras TCPInfo.RTT do M-Lab, convertidas de microssegundos a milissegundos.
+- Jitter: média das diferenças absolutas entre RTTs consecutivos (TCP, não jitter WebRTC).
+- IP público: `ConnectionInfo.Client` retornado pelo M-Lab. Não substitua por endereço LAN. Pode estar indisponível.
+- Qualidade e data: calculadas/exibidas localmente após conclusão.
+
+NDT7 pode transferir **centenas de MB ou mais** em redes rápidas; não há limite garantido de 29 MB. Nenhuma medição automática: checkbox de autorização para cada teste, desmarcado ao iniciar.
+
+## Privacidade
+
+O M-Lab publica os dados de medição, incluindo IP e horário: https://www.measurementlab.net/privacy/ . O AURORA armazena SOMENTE as últimas cinco linhas com download, upload e ping no dispositivo. Não persistir IP, jitter, hora, cidade nem consentimento. Não criar servidores customizados nem adicionar outras fontes para velocidade.
+
+## Testes
+
+Unitários Rust com amostras NDT7, UI com confirmação de consentimento e colunas históricas. Um teste vivo opt-in em GitHub Actions valida download/upload e latência real do M-Lab; não simular valores quando endpoints estiverem indisponíveis.
+
+**Não modificar os mecanismos de atualização Android validados na 0.0.25/0.0.26**: FileProvider exclusivo, APK, SHA-256, assinatura, URI e testes instrumentados.
