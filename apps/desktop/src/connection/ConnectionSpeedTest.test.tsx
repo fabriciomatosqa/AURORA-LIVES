@@ -29,5 +29,12 @@ describe('medição e histórico local de rede', () => {
     expect(html).toContain('Últimas 5 medições');
     expect(html).toContain('Histórico de download, upload e ping');
     expect(html).toContain('IP público');
+    expect(html).toContain('Measurement Lab');
+    expect(html).toContain('servidor automático');
+    expect(html).toContain('Autorizo esta medição do Measurement Lab');
+    expect(html).toContain('incluindo meu IP público e o horário do teste');
+    expect(html).toContain('Ping TCP (M-Lab)');
+    expect(html).toContain('Jitter TCP (M-Lab)');
+    expect(html).not.toContain('Cloudflare');
   });
 });
