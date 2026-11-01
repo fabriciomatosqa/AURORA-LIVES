@@ -1,5 +1,5 @@
 import { Peer, type DataConnection, type MediaConnection } from 'peerjs';
-import { capturePreset, emptyMetrics, summarizeRTCStats, type QualityMode, type NetworkMetrics } from './quality';
+import { capturePreset, hintVideoCapture, emptyMetrics, summarizeRTCStats, type QualityMode, type NetworkMetrics } from './quality';
 import {
   ROOM_CAPACITY, cleanName, cleanText, decodeWire, generateRoomCode,
   hostPeerId, isNameTaken, mergeMessages, normalizeRoomCode, validDisplayName,
@@ -319,6 +319,7 @@ export class RoomSession {
     if (!track) return;
     const preset = capturePreset(mode, this.value.members.length);
     try {
+      hintVideoCapture(track, preset);
       await track.applyConstraints({
         width: { ideal: preset.width }, height: { ideal: preset.height },
         frameRate: { ideal: preset.fps, max: preset.fps },
@@ -575,6 +576,7 @@ export class RoomSession {
         return;
       }
       this.localDisplay = stream;
+      stream.getVideoTracks().forEach(track => hintVideoCapture(track, preset));
       stream.getVideoTracks().forEach(track =>
         track.addEventListener('ended', () => this.stopScreen(), { once: true }));
       this.emit({
