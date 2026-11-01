@@ -66,7 +66,16 @@ def generate(source=SOURCE, master=MASTER, res=RES, manifest=MANIFEST):
         written.append(target)
     color = res/"values/aurora_launcher_colors.xml"
     color.parent.mkdir(parents=True,exist_ok=True)
-    color.write_text('<?xml version="1.0" encoding="utf-8"?><resources><color name="aurora_launcher_background">#080D19</color></resources>',encoding="utf-8")
+    # Tauri may regenerate the adaptive-icon XML during a signed release build,
+    # restoring @color/ic_launcher_background. Keep both names mapped to
+    # the same AURORA background so AAPT2 always finds the resource.
+    color.write_text(
+        '<?xml version="1.0" encoding="utf-8"?><resources>'
+        '<color name="aurora_launcher_background">#080D19</color>'
+        '<color name="ic_launcher_background">#080D19</color>'
+        '</resources>',
+        encoding="utf-8",
+    )
     written.append(color)
 
     text = manifest.read_text(encoding="utf-8")

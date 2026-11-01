@@ -31,6 +31,11 @@ class IconTests(unittest.TestCase):
                 self.assertNotEqual(result.getpixel((24,24)),(255,210,0,255))
             self.assertIn('android:roundIcon="@mipmap/ic_launcher_round"',manifest.read_text())
             self.assertIn('@mipmap/ic_launcher_foreground',(res/"mipmap-anydpi-v26/ic_launcher.xml").read_text())
+            # Release builds may regenerate the adaptive XML and reference
+            # the Tauri template color instead of the AURORA-specific alias.
+            colors = (res/"values/aurora_launcher_colors.xml").read_text()
+            self.assertIn('<color name="aurora_launcher_background">#080D19</color>',colors)
+            self.assertIn('<color name="ic_launcher_background">#080D19</color>',colors)
 
 
 if __name__ == "__main__":
