@@ -3,28 +3,70 @@
  * Mesh calls send one independent stream to each viewer; prefer lower
  * resolution as the room grows so one person's upload is not overwhelmed.
  */
-export type QualityMode = 'auto' | 'economy' | 'balanced' | 'high' | 'ultra';
+export type QualityMode = 'auto' | 'economy' | 'balanced' | 'fluid' | 'high' | 'ultra';
 
 export type CapturePreset = {
   name: string;
   width: number;
   height: number;
   fps: number;
+  priority: string;
 };
 
 export const CAPTURE_PRESETS: Record<Exclude<QualityMode, 'auto'>, CapturePreset> = {
-  economy: { name: 'Econômico · 480p30', width: 854, height: 480, fps: 30 },
-  balanced: { name: 'Equilibrado · 720p30', width: 1280, height: 720, fps: 30 },
-  high: { name: 'Alta qualidade · 1080p30', width: 1920, height: 1080, fps: 30 },
-  ultra: { name: 'Máxima qualidade · 1080p60', width: 1920, height: 1080, fps: 60 },
+  economy: { name: 'Econômico · 480p30', width: 854, height: 480, fps: 30, priority: 'Poupar internet' },
+  balanced: { name: 'Equilibrado · 720p30', width: 1280, height: 720, fps: 30, priority: 'Estabilidade' },
+  fluid: { name: 'Fluidez · 720p60', width: 1280, height: 720, fps: 60, priority: 'Movimento suave' },
+  high: { name: 'Alta definição · 1080p30', width: 1920, height: 1080, fps: 30, priority: 'Nitidez' },
+  ultra: { name: 'Ultra · 1080p60', width: 1920, height: 1080, fps: 60, priority: 'Nitidez e fluidez' },
 };
 
-export function capturePreset(mode: QualityMode, participantCount: number): CapturePreset {
+/**
+ * Adaptive selection uses both mesh upload pressure (number of recipients) and
+ * available ICE candidate-pair measurements when provided. This is a cautious
+ * hint, not a bandwidth test or a promise of delivered frame rate.
+ * For missing metrics, retain the safe participant-count fallback.
+ */
+export type AdaptationSample = {
+  rttMs: number | null;
+  estimatedUplinkMbps: number | null;
+  state: 'unavailable' | 'connecting' | 'connected' | 'unstable';
+};
+
+const AUTO_ORDER = ['economy', 'balanced', 'fluid', 'high', 'ultra'] as const;
+
+export function capturePreset(
+  mode: QualityMode,
+  participantCount: number,
+  sample?: AdaptationSample,
+): CapturePreset {
   if (mode !== 'auto') return CAPTURE_PRESETS[mode];
-  if (participantCount >= 7) return CAPTURE_PRESETS.economy;
-  if (participantCount >= 4) return CAPTURE_PRESETS.balanced;
-  if (participantCount >= 3) return CAPTURE_PRESETS.high;
-  return CAPTURE_PRESETS.ultra;
+  const byParticipants = participantCount >= 7 ? 0 : participantCount >= 4 ? 1 : participantCount >= 3 ? 2 : 4;
+  // A single selected ICE pair isn't an aggregate upload measurement. Use it
+  // only as a downshift hint, never to exceed the participants' safety cap.
+  let byNetwork = 4;
+  if (sample?.state === 'unstable' || (sample?.rttMs !== null && sample?.rttMs !== undefined && sample.rttMs > 450)) {
+    byNetwork = 0;
+  } else if (sample?.rttMs !== null && sample?.rttMs !== undefined && sample.rttMs > 250) {
+    byNetwork = 1;
+  }
+  if (sample?.estimatedUplinkMbps !== null && sample?.estimatedUplinkMbps !== undefined
+      && Number.isFinite(sample.estimatedUplinkMbps)) {
+    const mbps = sample.estimatedUplinkMbps;
+    // Conservative per-connection estimates, never an exact bandwidth budget.
+    const byBitrate = mbps < 2 ? 0 : mbps < 3.5 ? 1 : mbps < 5 ? 2 : mbps < 8 ? 3 : 4;
+    byNetwork = Math.min(byNetwork, byBitrate);
+  }
+  return CAPTURE_PRESETS[AUTO_ORDER[Math.min(byParticipants, byNetwork)]];
+}
+
+/** A browser may ignore contentHint. For 60 FPS request fluid motion over detail. */
+export function preferVideoMotion(track: MediaStreamTrack, preset: CapturePreset): void {
+  try {
+    track.contentHint = preset.fps >= 60 ? 'motion' : 'detail';
+  } catch {
+    // Native webviews may not allow this hint; capture remains functional.
+  }
 }
 
 /** ICE candidate pair statistics are measurements only, not a speed test. */
