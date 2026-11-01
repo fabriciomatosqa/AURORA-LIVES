@@ -640,7 +640,7 @@ export default function App() {
                   ? ' ' + room.metrics.videoWidth + ' × ' + room.metrics.videoHeight
                     + (room.metrics.videoFps !== null ? ' · ' + room.metrics.videoFps + ' FPS reais' : ' · FPS indisponível')
                   : ' aguardando estatísticas de transmissão'}
-              </span>
+              </span>}
             </div>
 
             {microphoneStreams.length > 0 && <section className="microphone-section" aria-label="Participantes com áudio ativo">
