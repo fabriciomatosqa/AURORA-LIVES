@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Patch Tauri generated AndroidManifest, preserving permissions and rotation."""
 from pathlib import Path
+from android_screen_awake import patch_main_activity
 import re
 import xml.etree.ElementTree as ET
 
@@ -64,6 +65,16 @@ resources.mkdir(parents=True, exist_ok=True)
     '</paths>\n',
     encoding="utf-8",
 )
+# Keep the screen awake during foreground viewing, including Android WebViews
+# without browser Wake Lock support. onPause clears the flag automatically.
+main_activity = Path("src-tauri/gen/android/app/src/main/java/com/aurora/lives/MainActivity.kt")
+if not main_activity.is_file():
+    raise SystemExit("MainActivity.kt do Android não encontrada.")
+try:
+    main_activity.write_text(patch_main_activity(main_activity.read_text(encoding="utf-8")), encoding="utf-8")
+except ValueError as error:
+    raise SystemExit(str(error))
+
 plugin = Path("src-tauri/gen/android/app/src/main/java/com/aurora/lives/ApkInstallerPlugin.kt")
 plugin.parent.mkdir(parents=True, exist_ok=True)
 plugin.write_text(ANDROID_INSTALLER_PLUGIN, encoding="utf-8")
@@ -86,4 +97,4 @@ assert len([p for p in providers if p.get(f"{{{ANDROID}}}authorities") == "com.a
 provider_names = [p.get(f"{{{ANDROID}}}name") for p in providers]
 assert len(provider_names) == len(set(provider_names)), "Provider ComponentName duplicado."
 assert not any(f"{{{ANDROID}}}screenOrientation" in activity.attrib for activity in root.iter("activity"))
-print("Android: microfone, rotação, FileProvider e instalador APK nativo configurados.")
+print("Android: microfone, rotação, tela ativa visível, FileProvider e instalador APK nativo configurados.")
