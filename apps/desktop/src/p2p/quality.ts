@@ -3,7 +3,7 @@
  * Mesh calls send one independent stream to each viewer; prefer lower
  * resolution as the room grows so one person's upload is not overwhelmed.
  */
-export type QualityMode = 'auto' | 'economy' | 'balanced' | 'high' | 'ultra';
+export type QualityMode = 'auto' | 'economy' | 'balanced' | 'fluid' | 'high' | 'ultra';
 
 export type CapturePreset = {
   name: string;
@@ -15,6 +15,7 @@ export type CapturePreset = {
 export const CAPTURE_PRESETS: Record<Exclude<QualityMode, 'auto'>, CapturePreset> = {
   economy: { name: 'Econômico · 480p30', width: 854, height: 480, fps: 30 },
   balanced: { name: 'Equilibrado · 720p30', width: 1280, height: 720, fps: 30 },
+  fluid: { name: 'Fluidez · 720p60', width: 1280, height: 720, fps: 60 },
   high: { name: 'Alta qualidade · 1080p30', width: 1920, height: 1080, fps: 30 },
   ultra: { name: 'Máxima qualidade · 1080p60', width: 1920, height: 1080, fps: 60 },
 };
@@ -23,7 +24,7 @@ export function capturePreset(mode: QualityMode, participantCount: number): Capt
   if (mode !== 'auto') return CAPTURE_PRESETS[mode];
   if (participantCount >= 7) return CAPTURE_PRESETS.economy;
   if (participantCount >= 4) return CAPTURE_PRESETS.balanced;
-  if (participantCount >= 3) return CAPTURE_PRESETS.high;
+  if (participantCount >= 3) return CAPTURE_PRESETS.fluid;
   return CAPTURE_PRESETS.ultra;
 }
 
@@ -36,18 +37,47 @@ export type NetworkMetrics = {
   videoWidth: number | null;
   videoHeight: number | null;
   videoFps: number | null;
+  /** Estatística do RTP enviado ou recebido, nunca o FPS simplesmente solicitado. */
+  videoDirection: 'outbound-rtp' | 'inbound-rtp' | null;
 };
 
 export const emptyMetrics: NetworkMetrics = {
   state: 'unavailable', rttMs: null, estimatedUplinkMbps: null,
-  direct: null, videoWidth: null, videoHeight: null, videoFps: null,
+  direct: null, videoWidth: null, videoHeight: null, videoFps: null, videoDirection: null,
 };
+
+/** Returns measured encoded/decoded RTP frames, not the chosen capture preset. */
+export function actualVideoRtp(
+  stats: RTCStatsReport,
+  direction: 'outbound-rtp' | 'inbound-rtp',
+): Pick<NetworkMetrics, 'videoWidth' | 'videoHeight' | 'videoFps' | 'videoDirection'> {
+  let found: { width: number | null; height: number | null; fps: number | null } | null = null;
+  stats.forEach(entry => {
+    if (entry.type !== direction) return;
+    const record = entry as unknown as Record<string, unknown>;
+    if (record.kind !== 'video' && record.mediaType !== 'video') return;
+    // Do not mistake a disabled video sender for an active transmission.
+    if (record.active === false) return;
+    const width = typeof record.frameWidth === 'number' && record.frameWidth > 0 ? record.frameWidth : null;
+    const height = typeof record.frameHeight === 'number' && record.frameHeight > 0 ? record.frameHeight : null;
+    const fps = typeof record.framesPerSecond === 'number' && record.framesPerSecond >= 0
+      ? Math.round(record.framesPerSecond * 10) / 10 : null;
+    if (!found || (fps !== null && found.fps === null)) found = { width, height, fps };
+  });
+  return {
+    videoWidth: found?.width ?? null,
+    videoHeight: found?.height ?? null,
+    videoFps: found?.fps ?? null,
+    videoDirection: found ? direction : null,
+  };
+}
 
 /** Use the selected candidate pair, not an arbitrary pair from getStats(). */
 export function summarizeRTCStats(
   stats: RTCStatsReport,
   connectionState: RTCPeerConnectionState,
-  capture?: MediaStreamTrack | null,
+  videoStats?: RTCStatsReport | null,
+  videoDirection: 'outbound-rtp' | 'inbound-rtp' = 'outbound-rtp',
 ): NetworkMetrics {
   let selected: Record<string, unknown> | null = null;
   let remoteCandidate: Record<string, unknown> | null = null;
@@ -80,7 +110,9 @@ export function summarizeRTCStats(
     ? Math.round(Math.max(0, pair.availableOutgoingBitrate) / 100000) / 10 : null;
   // Without TURN, a 'relay' candidate would still need to be reported honestly.
   const candidateType = remote && typeof remote.candidateType === 'string' ? remote.candidateType : null;
-  const settings = capture?.getSettings();
+  const video = videoStats ? actualVideoRtp(videoStats, videoDirection) : {
+    videoWidth: null, videoHeight: null, videoFps: null, videoDirection: null,
+  };
   return {
     state: connectionState === 'connected'
       ? (rtt !== null && rtt > 500 ? 'unstable' : 'connected')
@@ -89,9 +121,7 @@ export function summarizeRTCStats(
     rttMs: rtt,
     estimatedUplinkMbps: available,
     direct: candidateType ? candidateType !== 'relay' : null,
-    videoWidth: settings?.width ?? null,
-    videoHeight: settings?.height ?? null,
-    videoFps: settings?.frameRate ?? null,
+    ...video,
   };
 }
 
