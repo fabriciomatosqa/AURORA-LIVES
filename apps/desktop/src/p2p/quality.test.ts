@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { actualVideoRtp, capabilities, capturePreset, summarizeRTCStats } from './quality';
+import { actualVideoRtp, capabilities, capturePreset, hintVideoCapture, summarizeRTCStats } from './quality';
 
 describe('qualidade automática em malha P2P', () => {
   it('prioriza 1080p60 em salas pequenas, adaptando antes de sobrecarregar o upload', () => {
@@ -10,6 +10,13 @@ describe('qualidade automática em malha P2P', () => {
     expect(capturePreset('auto', 5)).toMatchObject({ width: 1280, fps: 30 });
     expect(capturePreset('auto', 9)).toMatchObject({ width: 854, fps: 30 });
     expect(capturePreset('ultra', 10)).toMatchObject({ width: 1920, fps: 60 });
+  });
+  it('orienta WebRTC a preservar movimento em 60 FPS e detalhes em 30 FPS', () => {
+    const track = { contentHint: '' } as unknown as MediaStreamTrack;
+    hintVideoCapture(track, capturePreset('fluid', 2));
+    expect(track.contentHint).toBe('motion');
+    hintVideoCapture(track, capturePreset('high', 2));
+    expect(track.contentHint).toBe('detail');
   });
   it('exibe RTT e estimativa de banda somente quando métricas válidas existem', () => {
     const map = new Map<string, Record<string, unknown>>([
