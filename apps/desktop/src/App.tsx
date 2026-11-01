@@ -126,7 +126,7 @@ export default function App() {
     readSavedInvites(fromStorage(SAVED_INVITES_KEY, '')));
   const [qualityPreference, setQualityPreference] = useState<QualityMode>(() => {
     const value = fromStorage('aurora.quality', 'auto');
-    return ['auto', 'economy', 'balanced', 'high', 'ultra'].includes(value) ? value as QualityMode : 'auto';
+    return ['auto', 'economy', 'balanced', 'fluid', 'high', 'ultra'].includes(value) ? value as QualityMode : 'auto';
   });
 
   const backState = useRef({ settingsOpen, sidebarOpen, inspectorOpen, mobileTab, connected: false, joining: false });
@@ -142,7 +142,7 @@ export default function App() {
   const microphoneStreams = room.remoteMedia.filter(item => item.kind === 'microphone');
   const broadcasting = room.screen || liveStreams.length > 0;
   const memberCount = room.members.length;
-  const selectedProfile = capturePreset(room.qualityMode, memberCount);
+  const selectedProfile = capturePreset(room.qualityMode, memberCount, room.metrics);
   const nicknameValid = validDisplayName(nickname);
   const nicknameError = nickname.trim() && !nicknameValid
     ? 'Esse nome não é permitido. Escolha um nome de até 32 caracteres, diferente de Visitante.' : '';
@@ -624,13 +624,14 @@ export default function App() {
             <div className="stage-settings">
               <label htmlFor="video-profile"><Gauge size={17}/> Qualidade da transmissão</label>
               <select id="video-profile" value={room.qualityMode} onChange={event => void updateQuality(event.target.value as QualityMode)}>
-                <option value="auto">Automático (recomendado)</option>
-                <option value="economy">Econômico · 480p30</option>
-                <option value="balanced">Equilibrado · 720p30</option>
-                <option value="high">Alta qualidade · 1080p30</option>
-                <option value="ultra">Máxima qualidade · 1080p60</option>
+                <option value="economy">Econômico · 480p · 30 FPS · Poupar internet</option>
+                <option value="balanced">Equilibrado · 720p · 30 FPS · Estabilidade</option>
+                <option value="fluid">Fluidez · 720p · 60 FPS · Movimento suave</option>
+                <option value="high">Alta definição · 1080p · 30 FPS · Nitidez</option>
+                <option value="ultra">Ultra · 1080p · 60 FPS · Nitidez e fluidez</option>
+                <option value="auto">Automático · adaptativo · até 60 FPS · Ajustar à conexão</option>
               </select>
-              <span>Perfil: {selectedProfile.name}</span>
+              <span>Alvo: {selectedProfile.name} · Prioridade: {room.qualityMode === 'auto' ? 'Ajustar à conexão' : selectedProfile.priority}. A qualidade real pode variar conforme a rede, o hardware e os participantes.</span>
             </div>
 
             {microphoneStreams.length > 0 && <section className="microphone-section" aria-label="Participantes com áudio ativo">
