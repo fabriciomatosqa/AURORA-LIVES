@@ -20,6 +20,14 @@ export const CAPTURE_PRESETS: Record<Exclude<QualityMode, 'auto'>, CapturePreset
   ultra: { name: 'Máxima qualidade · 1080p60', width: 1920, height: 1080, fps: 60 },
 };
 
+/** Under congestion, `motion` asks WebRTC to preserve FPS before fine detail.
+ * A browser/driver may ignore this hint: it is not a quality guarantee. */
+export function hintVideoCapture(track: MediaStreamTrack, preset: CapturePreset): void {
+  try {
+    track.contentHint = preset.fps >= 60 ? 'motion' : 'detail';
+  } catch { /* contentHint may be unsupported by a native WebView */ }
+}
+
 export function capturePreset(mode: QualityMode, participantCount: number): CapturePreset {
   if (mode !== 'auto') return CAPTURE_PRESETS[mode];
   if (participantCount >= 7) return CAPTURE_PRESETS.economy;
