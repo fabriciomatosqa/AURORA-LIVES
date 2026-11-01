@@ -284,15 +284,29 @@ export class RoomSession {
   private async updateStats(): Promise<void> {
     if (this.stopped || this.releasing || this.value.phase !== 'connected') return;
     const link = this.hostLink?.open ? this.hostLink : [...this.connections.values()].find(c => c.open);
-    const connection = link?.peerConnection;
+    // DataChannels and PeerJS media calls can use different RTCPeerConnections.
+    // Reading only the data connection reports NO actual video delivery metrics.
+    const mediaEntry = [...this.mediaCalls.entries()].find(([key, call]) =>
+      key.startsWith('out:screen:') && !!call.peerConnection)
+      ?? [...this.mediaCalls.entries()].find(([key, call]) =>
+        key.startsWith('in:screen:') && !!call.peerConnection);
+    const mediaConnection = mediaEntry?.[1].peerConnection;
+    const connection = link?.peerConnection ?? mediaConnection;
     if (!connection) {
       this.emit({ metrics: { ...emptyMetrics } });
       return;
     }
     try {
-      const stats = await connection.getStats();
+      const [stats, videoStats] = await Promise.all([
+        connection.getStats(),
+        mediaConnection && mediaConnection !== connection ? mediaConnection.getStats()
+          : mediaConnection ? Promise.resolve(null) : Promise.resolve(null),
+      ]);
       if (this.stopped || this.value.phase !== 'connected') return;
-      this.emit({ metrics: summarizeRTCStats(stats, connection.connectionState, this.localDisplay?.getVideoTracks()[0]) });
+      this.emit({ metrics: summarizeRTCStats(
+        stats, connection.connectionState, videoStats ?? (mediaConnection ? stats : null),
+        mediaEntry?.[0].startsWith('in:') ? 'inbound-rtp' : 'outbound-rtp',
+      ) });
     } catch {
       this.emit({ metrics: { ...emptyMetrics } });
     }
