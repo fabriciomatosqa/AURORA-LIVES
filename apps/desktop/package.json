@@ -11,7 +11,7 @@
     "pretauri": "npm run icons",
     "dev:native": "npm run tauri dev",
     "package:desktop": "npm run icons && tauri build",
-    "test": "npm run test:brand && vitest run",
+    "test": "npm run test:brand && node scripts/test-windows-signing-pipeline.mjs && vitest run",
     "test:brand": "node scripts/verify-brand.mjs",
     "test:visual": "node scripts/visual-smoke.mjs",
     "android:init": "tauri android init --ci",
