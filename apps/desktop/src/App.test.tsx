@@ -12,7 +12,7 @@ describe('nova interface AURORA LIVES', () => {
     expect(html).toContain('Informe um nome diferente de Visitante');
     expect(html).toContain('Sem cadastro');
     expect(html).toContain('AURORA LIVES');
-    expect(html).toContain('Prévia 0.0.32');
+    expect(html).toContain('Prévia 0.0.33');
   });
 
   it('mantém a logo original e as regiões de navegação acessíveis', () => {
