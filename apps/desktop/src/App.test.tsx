@@ -12,7 +12,7 @@ describe('nova interface AURORA LIVES', () => {
     expect(html).toContain('Informe um nome diferente de Visitante');
     expect(html).toContain('Sem cadastro');
     expect(html).toContain('AURORA LIVES');
-    expect(html).toContain('Prévia 0.0.31');
+    expect(html).toContain('Prévia 0.0.32');
   });
 
   it('mantém a logo original e as regiões de navegação acessíveis', () => {
@@ -25,6 +25,13 @@ describe('nova interface AURORA LIVES', () => {
     expect(html).toContain('aria-label="Bem-vindo ao AURORA LIVES"');
   });
 
+  it('inclui 720p60, mantém 1080p60 e não confunde preset com FPS real', () => {
+    const implementation = String(App);
+    expect(implementation).toContain('Fluidez');
+    expect(implementation).toContain('720p60');
+    expect(implementation).toContain('1080p60');
+    expect(implementation).toContain('FPS reais');
+  });
   it('não apresenta funcionalidades futuras como ações disponíveis', () => {
     const html = renderToStaticMarkup(<App />);
     expect(html).toContain('Comunidades públicas em desenvolvimento');

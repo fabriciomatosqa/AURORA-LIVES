@@ -13,6 +13,9 @@ class ProviderTests(unittest.TestCase):
             manifest = root / 'src-tauri/gen/android/app/src/main/AndroidManifest.xml'
             manifest.parent.mkdir(parents=True)
             manifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application><provider android:name="androidx.core.content.FileProvider" android:authorities="com.aurora.lives.fileprovider" /></application></manifest>')
+            activity = manifest.parent / 'java/com/aurora/lives/MainActivity.kt'
+            activity.parent.mkdir(parents=True, exist_ok=True)
+            activity.write_text('package com.aurora.lives\n\nimport app.tauri.TauriActivity\n\nclass MainActivity : TauriActivity()\n')
             for _ in range(2):
                 subprocess.run(['python3', str(script)], cwd=root, check=True, capture_output=True)
             providers = ET.parse(manifest).findall('.//provider')
@@ -28,6 +31,9 @@ class ProviderTests(unittest.TestCase):
             manifest = root / 'src-tauri/gen/android/app/src/main/AndroidManifest.xml'
             manifest.parent.mkdir(parents=True)
             manifest.write_text('<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application><provider android:name="androidx.core.content.FileProvider" android:authorities="com.aurora.lives.fileprovider"/><provider android:name="androidx.core.content.FileProvider" android:authorities="com.aurora.lives.aurora.fileprovider"/></application></manifest>')
+            activity = manifest.parent / 'java/com/aurora/lives/MainActivity.kt'
+            activity.parent.mkdir(parents=True, exist_ok=True)
+            activity.write_text('package com.aurora.lives\n\nimport app.tauri.TauriActivity\n\nclass MainActivity : TauriActivity()\n')
             subprocess.run(['python3', str(script)], cwd=root, check=True, capture_output=True)
             providers = ET.parse(manifest).findall('.//provider')
             self.assertEqual([p.get('{http://schemas.android.com/apk/res/android}name') for p in providers],
