@@ -68,8 +68,9 @@ export function MediaPlayer({ stream, muted, label }: { stream: MediaStream; mut
   }
 
   useEffect(() => {
+    const mountedTile = tile.current;
     const onFullscreenChange = () => {
-      if (fullscreenMode.current === 'native' && document.fullscreenElement !== tile.current) {
+      if (fullscreenMode.current === 'native' && document.fullscreenElement !== mountedTile) {
         fullscreenMode.current = 'off';
         setFullscreen(false);
       }
@@ -85,7 +86,7 @@ export function MediaPlayer({ stream, muted, label }: { stream: MediaStream; mut
     return () => {
       document.removeEventListener('fullscreenchange', onFullscreenChange);
       window.removeEventListener('keydown', onKeyDown);
-      if (document.fullscreenElement === tile.current) {
+      if (document.fullscreenElement === mountedTile) {
         void document.exitFullscreen?.().catch(() => {});
       }
     };
