@@ -1,0 +1,76 @@
+name: Retirar releases bloqueadas do AURORA LIVES
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/withdraw-blocked-releases.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  withdraw:
+    name: Retirar apenas v0.0.32 e v0.0.33 sem afetar 0.0.31
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Confirmar release estável preservada
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "v0.0.31-preview" --json assets --jq '.assets[].name' | grep -Fx 'AURORA-LIVES-Windows-x64-Setup.exe'
+
+      - name: Interromper publicações antigas da v0.0.33
+        shell: bash
+        run: |
+          set -euo pipefail
+          for run_id in 41336791915 41336792010; do
+            status="$(gh run view "$run_id" --repo "$GH_REPO" --json status --jq '.status' || true)"
+            if [[ "$status" != "completed" ]]; then
+              gh run cancel "$run_id" --repo "$GH_REPO" || true
+              echo "Cancelamento solicitado ao workflow $run_id"
+            fi
+          done
+          for run_id in 41336791915 41336792010; do
+            for attempt in $(seq 1 60); do
+              status="$(gh run view "$run_id" --repo "$GH_REPO" --json status --jq '.status')"
+              if [[ "$status" == "completed" ]]; then break; fi
+              sleep 10
+            done
+            status="$(gh run view "$run_id" --repo "$GH_REPO" --json status --jq '.status')"
+            if [[ "$status" != "completed" ]]; then
+              echo "::error::Publicação $run_id ainda em andamento; não é seguro limpar os assets."
+              exit 1
+            fi
+          done
+
+      - name: Excluir exclusivamente releases e tags 0.0.32 e 0.0.33
+        shell: bash
+        run: |
+          set -euo pipefail
+          for tag in v0.0.32-preview v0.0.33-preview; do
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh release delete "$tag" --cleanup-tag --yes
+              echo "Release $tag excluída."
+            fi
+            if gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+              gh api --method DELETE "repos/$GH_REPO/git/refs/tags/$tag"
+              echo "Tag $tag excluída."
+            fi
+          done
+
+      - name: Verificar exclusão e integridade da versão funcional
+        shell: bash
+        run: |
+          set -euo pipefail
+          for tag in v0.0.32-preview v0.0.33-preview; do
+            if gh release view "$tag" >/dev/null 2>&1; then echo "::error::Release $tag ainda existe"; exit 1; fi
+            if gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1; then echo "::error::Tag $tag ainda existe"; exit 1; fi
+          done
+          gh release view "v0.0.31-preview" --json assets --jq '.assets[].name' | grep -Fx 'AURORA-LIVES-Windows-x64-Setup.exe'
+          echo 'Removidas as releases 0.0.32 e 0.0.33. A 0.0.31 permanece intacta.' >> "$GITHUB_STEP_SUMMARY"

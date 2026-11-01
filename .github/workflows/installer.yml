@@ -93,13 +93,19 @@ jobs:
           path: dist-installers
           merge-multiple: true
       - name: Identificar versão do aplicativo
+        id: release_version
         shell: bash
         run: |
           set -euo pipefail
           VERSION="$(node -p "require('./apps/desktop/package.json').version")"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "TAG=v$VERSION-preview" >> "$GITHUB_ENV"
+          if [[ "$VERSION" == "0.0.32" || "$VERSION" == "0.0.33" ]]; then
+            echo "retired=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::A versão $VERSION foi retirada de distribuição; sem publicação de instaladores."
+          fi
       - name: Padronizar nomes e checksums
+        if: steps.release_version.outputs.retired != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -112,6 +118,7 @@ jobs:
           cp "$linux" release/AURORA-LIVES-Linux-amd64.deb
           (cd release && sha256sum *.exe *.deb > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
       - name: Publicar a versão prévia
+        if: steps.release_version.outputs.retired != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

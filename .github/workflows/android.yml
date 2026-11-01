@@ -186,7 +186,17 @@ jobs:
         with:
           name: AURORA-LIVES-Android-ARM64-PREVIEW
           path: android-preview
+      - name: Identificar versões retiradas da distribuição
+        id: withdrawn
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./apps/desktop/package.json').version")"
+          if [[ "$VERSION" == "0.0.32" || "$VERSION" == "0.0.33" ]]; then
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::APK da versão $VERSION não será publicado."
+          fi
       - name: Validar APK e aguardar publicação dos instaladores desktop
+        if: steps.withdrawn.outputs.blocked != 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
