@@ -15,6 +15,7 @@ import { UpdateIndicator, UpdateSettings } from './updates/UpdateSettings';
 import { UpdatePrompt } from './updates/UpdatePrompt';
 import { ConnectionSpeedTest } from './connection/ConnectionSpeedTest';
 import { isAndroidRuntime } from './platform';
+import { keepScreenAwakeWhileVisible } from './wakeLock';
 import { prepareRoomJoinSound, playRoomJoinSound, hasNewRemoteMember } from './sounds/roomJoinSound';
 
 type Theme = 'dark' | 'light' | 'system';
@@ -126,7 +127,7 @@ export default function App() {
     readSavedInvites(fromStorage(SAVED_INVITES_KEY, '')));
   const [qualityPreference, setQualityPreference] = useState<QualityMode>(() => {
     const value = fromStorage('aurora.quality', 'auto');
-    return ['auto', 'economy', 'balanced', 'high', 'ultra'].includes(value) ? value as QualityMode : 'auto';
+    return ['auto', 'economy', 'balanced', 'fluid', 'high', 'ultra'].includes(value) ? value as QualityMode : 'auto';
   });
 
   const backState = useRef({ settingsOpen, sidebarOpen, inspectorOpen, mobileTab, connected: false, joining: false });
@@ -146,6 +147,8 @@ export default function App() {
   const nicknameValid = validDisplayName(nickname);
   const nicknameError = nickname.trim() && !nicknameValid
     ? 'Esse nome não é permitido. Escolha um nome de até 32 caracteres, diferente de Visitante.' : '';
+
+  useEffect(() => keepScreenAwakeWhileVisible(), []);
 
   useEffect(() => {
     if (isAndroid) {
@@ -441,7 +444,7 @@ export default function App() {
         <UpdateIndicator updater={updater} onClick={() => setSettingsOpen(true)}/>
         <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
           <span className="status-indicator"/>
-          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.31'}
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.32'}
         </span>
         <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
@@ -627,10 +630,17 @@ export default function App() {
                 <option value="auto">Automático (recomendado)</option>
                 <option value="economy">Econômico · 480p30</option>
                 <option value="balanced">Equilibrado · 720p30</option>
+                <option value="fluid">Fluidez · 720p60</option>
                 <option value="high">Alta qualidade · 1080p30</option>
                 <option value="ultra">Máxima qualidade · 1080p60</option>
               </select>
-              <span>Perfil: {selectedProfile.name}</span>
+              <span>Perfil solicitado: {selectedProfile.name}. O FPS real depende da rede e do dispositivo.</span>
+              {broadcasting && <span role="status">Vídeo WebRTC:
+                {room.metrics.videoWidth && room.metrics.videoHeight
+                  ? ' ' + room.metrics.videoWidth + ' × ' + room.metrics.videoHeight
+                    + (room.metrics.videoFps !== null ? ' · ' + room.metrics.videoFps + ' FPS reais' : ' · FPS indisponível')
+                  : ' aguardando estatísticas de transmissão'}
+              </span>
             </div>
 
             {microphoneStreams.length > 0 && <section className="microphone-section" aria-label="Participantes com áudio ativo">
@@ -654,10 +664,10 @@ export default function App() {
               </div>
               {diagnosticsOpen && <div className="diagnostics-detail">
                 <MiniMetric icon={<Activity size={16}/>} label="Saída estimada" value={room.metrics.estimatedUplinkMbps === null ? 'Indisponível' : room.metrics.estimatedUplinkMbps + ' Mbps'}/>
-                <MiniMetric icon={<MonitorUp size={16}/>} label="Captura"
+                <MiniMetric icon={<MonitorUp size={16}/>} label="Vídeo WebRTC"
                   value={room.metrics.videoWidth && room.metrics.videoHeight
-                    ? room.metrics.videoWidth + ' × ' + room.metrics.videoHeight + (room.metrics.videoFps ? ' · ' + Math.round(room.metrics.videoFps) + ' FPS' : '')
-                    : 'Não iniciada'}/>
+                    ? room.metrics.videoWidth + ' × ' + room.metrics.videoHeight + (room.metrics.videoFps !== null ? ' · ' + room.metrics.videoFps + ' FPS' : ' · FPS indisponível')
+                    : 'Aguardando RTP'}/>
                 <p>{room.warning || 'Os dados são estimativas de uma conexão WebRTC, não um teste de velocidade.'}</p>
               </div>}
             </div>
@@ -798,7 +808,7 @@ export default function App() {
           <UpdateSettings updater={updater} connected={connected}/>
           <div className="privacy-disclaimer"><LockKeyhole size={19}/><p>Esta versão usa apelidos locais, não contas. Quem souber o código poderá entrar na sala enquanto o anfitrião estiver online.</p></div>
         </div>
-        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.31</span>
+        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.32</span>
           <button onClick={() => setSettingsOpen(false)}>Concluído <ArrowRight size={17}/></button></footer>
       </section>
     </div>}
