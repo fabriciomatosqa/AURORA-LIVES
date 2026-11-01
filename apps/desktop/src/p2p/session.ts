@@ -1,5 +1,5 @@
 import { Peer, type DataConnection, type MediaConnection } from 'peerjs';
-import { capturePreset, hintVideoCapture, emptyMetrics, summarizeRTCStats, type QualityMode, type NetworkMetrics } from './quality';
+import { capturePreset, preferVideoMotion, emptyMetrics, summarizeRTCStats, type QualityMode, type NetworkMetrics } from './quality';
 import {
   ROOM_CAPACITY, cleanName, cleanText, decodeWire, generateRoomCode,
   hostPeerId, isNameTaken, mergeMessages, normalizeRoomCode, validDisplayName,
@@ -53,6 +53,8 @@ export class RoomSession {
   private joiningTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private statsTimer: ReturnType<typeof setInterval> | null = null;
+  private autoPresetApplied: string | null = null;
+  private lastAutoAdjustmentAt = 0;
   private retries = 0;
   private stopped = false;
   private releasing = false;
@@ -99,6 +101,8 @@ export class RoomSession {
     this.localDisplay?.getTracks().forEach(track => track.stop());
     this.localMic = null;
     this.localDisplay = null;
+    this.autoPresetApplied = null;
+    this.lastAutoAdjustmentAt = 0;
     for (const call of this.mediaCalls.values()) call.close();
     this.mediaCalls.clear();
     for (const link of this.connections.values()) link.close();
@@ -284,29 +288,18 @@ export class RoomSession {
   private async updateStats(): Promise<void> {
     if (this.stopped || this.releasing || this.value.phase !== 'connected') return;
     const link = this.hostLink?.open ? this.hostLink : [...this.connections.values()].find(c => c.open);
-    // DataChannels and PeerJS media calls can use different RTCPeerConnections.
-    // Reading only the data connection reports NO actual video delivery metrics.
-    const mediaEntry = [...this.mediaCalls.entries()].find(([key, call]) =>
-      key.startsWith('out:screen:') && !!call.peerConnection)
-      ?? [...this.mediaCalls.entries()].find(([key, call]) =>
-        key.startsWith('in:screen:') && !!call.peerConnection);
-    const mediaConnection = mediaEntry?.[1].peerConnection;
-    const connection = link?.peerConnection ?? mediaConnection;
+    const connection = link?.peerConnection;
     if (!connection) {
       this.emit({ metrics: { ...emptyMetrics } });
       return;
     }
     try {
-      const [stats, videoStats] = await Promise.all([
-        connection.getStats(),
-        mediaConnection && mediaConnection !== connection ? mediaConnection.getStats()
-          : mediaConnection ? Promise.resolve(null) : Promise.resolve(null),
-      ]);
+      const stats = await connection.getStats();
       if (this.stopped || this.value.phase !== 'connected') return;
-      this.emit({ metrics: summarizeRTCStats(
-        stats, connection.connectionState, videoStats ?? (mediaConnection ? stats : null),
-        mediaEntry?.[0].startsWith('in:') ? 'inbound-rtp' : 'outbound-rtp',
-      ) });
+      this.emit({ metrics: summarizeRTCStats(stats, connection.connectionState, this.localDisplay?.getVideoTracks()[0]) });
+      // Re-evaluate only after actual local WebRTC measurements, not a speedtest
+      // or assumptions about the user's plan. Avoid bitrate-induced oscillation.
+      this.adjustAutoQuality();
     } catch {
       this.emit({ metrics: { ...emptyMetrics } });
     }
@@ -314,16 +307,23 @@ export class RoomSession {
 
   /** Change future capture quality and, if possible, an active capture track. */
   async setQuality(mode: QualityMode): Promise<void> {
+    const previousMode = this.value.qualityMode;
     this.emit({ qualityMode: mode });
+    if (previousMode !== mode) this.autoPresetApplied = null;
     const track = this.localDisplay?.getVideoTracks()[0];
     if (!track) return;
-    const preset = capturePreset(mode, this.value.members.length);
+    const preset = capturePreset(mode, this.value.members.length, this.value.metrics);
+    if (mode === 'auto' && this.autoPresetApplied === preset.name) return;
     try {
-      hintVideoCapture(track, preset);
+      preferVideoMotion(track, preset);
       await track.applyConstraints({
         width: { ideal: preset.width }, height: { ideal: preset.height },
         frameRate: { ideal: preset.fps, max: preset.fps },
       });
+      if (mode === 'auto') {
+        this.autoPresetApplied = preset.name;
+        this.lastAutoAdjustmentAt = Date.now();
+      }
       this.emit({ warning: 'Perfil solicitado: ' + preset.name + '. A qualidade real depende do sistema e da rede.' });
       void this.updateStats();
     } catch {
@@ -331,8 +331,13 @@ export class RoomSession {
     }
   }
 
-  private adjustAutoQuality(): void {
+  private adjustAutoQuality(immediate = false): void {
     if (this.value.qualityMode !== 'auto' || !this.localDisplay) return;
+    const preset = capturePreset('auto', this.value.members.length, this.value.metrics);
+    if (preset.name === this.autoPresetApplied) return;
+    // PeerJS estimates fluctuate quickly. Wait for repeated measurements
+    // before switching; membership changes can immediately reduce demand.
+    if (!immediate && Date.now() - this.lastAutoAdjustmentAt < 12000) return;
     void this.setQuality('auto');
   }
 
@@ -382,7 +387,7 @@ export class RoomSession {
         this.emit({ members });
         link.send({ type: 'welcome', version: 1, members, messages: this.value.messages } satisfies Wire);
         this.broadcastMembers();
-        this.adjustAutoQuality();
+        this.adjustAutoQuality(true);
         // Wait for guest's ready acknowledgement before attempting media calls.
         return;
       }
@@ -401,7 +406,7 @@ export class RoomSession {
     this.removeMediaFor(link.peer);
     this.emit({ members: this.value.members.filter(m => m.id !== link.peer) });
     this.broadcastMembers();
-    this.adjustAutoQuality();
+    this.adjustAutoQuality(true);
   }
 
   private broadcastMembers(): void {
@@ -415,7 +420,7 @@ export class RoomSession {
     for (const id of previousIDs) if (!nextIDs.has(id)) this.removeMediaFor(id);
     this.emit({ members: next });
     this.syncMediaTargets();
-    this.adjustAutoQuality();
+    this.adjustAutoQuality(true);
   }
 
   private addHostMessage(senderId: string, text: string): void {
@@ -554,7 +559,7 @@ export class RoomSession {
       if (!navigator.mediaDevices?.getDisplayMedia) {
         throw new Error('Compartilhar tela não é suportado pelo mecanismo de vídeo deste sistema.');
       }
-      const preset = capturePreset(this.value.qualityMode, this.value.members.length);
+      const preset = capturePreset(this.value.qualityMode, this.value.members.length, this.value.metrics);
       const options: DisplayMediaStreamOptions = {
         video: { width: { ideal: preset.width }, height: { ideal: preset.height }, frameRate: { ideal: preset.fps, max: preset.fps } },
         audio: true,
@@ -576,9 +581,12 @@ export class RoomSession {
         return;
       }
       this.localDisplay = stream;
-      stream.getVideoTracks().forEach(track => hintVideoCapture(track, preset));
-      stream.getVideoTracks().forEach(track =>
-        track.addEventListener('ended', () => this.stopScreen(), { once: true }));
+      stream.getVideoTracks().forEach(track => {
+        preferVideoMotion(track, preset);
+        track.addEventListener('ended', () => this.stopScreen(), { once: true });
+      });
+      this.autoPresetApplied = this.value.qualityMode === 'auto' ? preset.name : null;
+      this.lastAutoAdjustmentAt = Date.now();
       this.emit({
         screen: true, localScreen: stream, error: '',
         warning: stream.getAudioTracks().length
@@ -594,6 +602,8 @@ export class RoomSession {
     if (!this.localDisplay) return;
     this.localDisplay.getTracks().forEach(track => track.stop());
     this.localDisplay = null;
+    this.autoPresetApplied = null;
+    this.lastAutoAdjustmentAt = 0;
     for (const member of this.value.members) {
       const key = this.mediaKey('screen', member.id, 'out');
       this.mediaCalls.get(key)?.close();

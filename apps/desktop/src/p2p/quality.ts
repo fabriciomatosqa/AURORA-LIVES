@@ -10,30 +10,63 @@ export type CapturePreset = {
   width: number;
   height: number;
   fps: number;
+  priority: string;
 };
 
 export const CAPTURE_PRESETS: Record<Exclude<QualityMode, 'auto'>, CapturePreset> = {
-  economy: { name: 'Econômico · 480p30', width: 854, height: 480, fps: 30 },
-  balanced: { name: 'Equilibrado · 720p30', width: 1280, height: 720, fps: 30 },
-  fluid: { name: 'Fluidez · 720p60', width: 1280, height: 720, fps: 60 },
-  high: { name: 'Alta qualidade · 1080p30', width: 1920, height: 1080, fps: 30 },
-  ultra: { name: 'Máxima qualidade · 1080p60', width: 1920, height: 1080, fps: 60 },
+  economy: { name: 'Econômico · 480p30', width: 854, height: 480, fps: 30, priority: 'Poupar internet' },
+  balanced: { name: 'Equilibrado · 720p30', width: 1280, height: 720, fps: 30, priority: 'Estabilidade' },
+  fluid: { name: 'Fluidez · 720p60', width: 1280, height: 720, fps: 60, priority: 'Movimento suave' },
+  high: { name: 'Alta definição · 1080p30', width: 1920, height: 1080, fps: 30, priority: 'Nitidez' },
+  ultra: { name: 'Ultra · 1080p60', width: 1920, height: 1080, fps: 60, priority: 'Nitidez e fluidez' },
 };
 
-/** Under congestion, `motion` asks WebRTC to preserve FPS before fine detail.
- * A browser/driver may ignore this hint: it is not a quality guarantee. */
-export function hintVideoCapture(track: MediaStreamTrack, preset: CapturePreset): void {
-  try {
-    track.contentHint = preset.fps >= 60 ? 'motion' : 'detail';
-  } catch { /* contentHint may be unsupported by a native WebView */ }
+/**
+ * Adaptive selection uses both mesh upload pressure (number of recipients) and
+ * available ICE candidate-pair measurements when provided. This is a cautious
+ * hint, not a bandwidth test or a promise of delivered frame rate.
+ * For missing metrics, retain the safe participant-count fallback.
+ */
+export type AdaptationSample = {
+  rttMs: number | null;
+  estimatedUplinkMbps: number | null;
+  state: 'unavailable' | 'connecting' | 'connected' | 'unstable';
+};
+
+const AUTO_ORDER = ['economy', 'balanced', 'fluid', 'high', 'ultra'] as const;
+
+export function capturePreset(
+  mode: QualityMode,
+  participantCount: number,
+  sample?: AdaptationSample,
+): CapturePreset {
+  if (mode !== 'auto') return CAPTURE_PRESETS[mode];
+  const byParticipants = participantCount >= 7 ? 0 : participantCount >= 4 ? 1 : participantCount >= 3 ? 2 : 4;
+  // A single selected ICE pair isn't an aggregate upload measurement. Use it
+  // only as a downshift hint, never to exceed the participants' safety cap.
+  let byNetwork = 4;
+  if (sample?.state === 'unstable' || (sample?.rttMs !== null && sample?.rttMs !== undefined && sample.rttMs > 450)) {
+    byNetwork = 0;
+  } else if (sample?.rttMs !== null && sample?.rttMs !== undefined && sample.rttMs > 250) {
+    byNetwork = 1;
+  }
+  if (sample?.estimatedUplinkMbps !== null && sample?.estimatedUplinkMbps !== undefined
+      && Number.isFinite(sample.estimatedUplinkMbps)) {
+    const mbps = sample.estimatedUplinkMbps;
+    // Conservative per-connection estimates, never an exact bandwidth budget.
+    const byBitrate = mbps < 2 ? 0 : mbps < 3.5 ? 1 : mbps < 5 ? 2 : mbps < 8 ? 3 : 4;
+    byNetwork = Math.min(byNetwork, byBitrate);
+  }
+  return CAPTURE_PRESETS[AUTO_ORDER[Math.min(byParticipants, byNetwork)]];
 }
 
-export function capturePreset(mode: QualityMode, participantCount: number): CapturePreset {
-  if (mode !== 'auto') return CAPTURE_PRESETS[mode];
-  if (participantCount >= 7) return CAPTURE_PRESETS.economy;
-  if (participantCount >= 4) return CAPTURE_PRESETS.balanced;
-  if (participantCount >= 3) return CAPTURE_PRESETS.fluid;
-  return CAPTURE_PRESETS.ultra;
+/** A browser may ignore contentHint. For 60 FPS request fluid motion over detail. */
+export function preferVideoMotion(track: MediaStreamTrack, preset: CapturePreset): void {
+  try {
+    track.contentHint = preset.fps >= 60 ? 'motion' : 'detail';
+  } catch {
+    // Native webviews may not allow this hint; capture remains functional.
+  }
 }
 
 /** ICE candidate pair statistics are measurements only, not a speed test. */
@@ -45,48 +78,18 @@ export type NetworkMetrics = {
   videoWidth: number | null;
   videoHeight: number | null;
   videoFps: number | null;
-  /** Estatística do RTP enviado ou recebido, nunca o FPS simplesmente solicitado. */
-  videoDirection: 'outbound-rtp' | 'inbound-rtp' | null;
 };
 
 export const emptyMetrics: NetworkMetrics = {
   state: 'unavailable', rttMs: null, estimatedUplinkMbps: null,
-  direct: null, videoWidth: null, videoHeight: null, videoFps: null, videoDirection: null,
+  direct: null, videoWidth: null, videoHeight: null, videoFps: null,
 };
-
-/** Returns measured encoded/decoded RTP frames, not the chosen capture preset. */
-export function actualVideoRtp(
-  stats: RTCStatsReport,
-  direction: 'outbound-rtp' | 'inbound-rtp',
-): Pick<NetworkMetrics, 'videoWidth' | 'videoHeight' | 'videoFps' | 'videoDirection'> {
-  const candidates: { width: number | null; height: number | null; fps: number | null }[] = [];
-  stats.forEach(entry => {
-    if (entry.type !== direction) return;
-    const record = entry as unknown as Record<string, unknown>;
-    if (record.kind !== 'video' && record.mediaType !== 'video') return;
-    // Do not mistake a disabled video sender for an active transmission.
-    if (record.active === false) return;
-    const width = typeof record.frameWidth === 'number' && record.frameWidth > 0 ? record.frameWidth : null;
-    const height = typeof record.frameHeight === 'number' && record.frameHeight > 0 ? record.frameHeight : null;
-    const fps = typeof record.framesPerSecond === 'number' && record.framesPerSecond >= 0
-      ? Math.round(record.framesPerSecond * 10) / 10 : null;
-    candidates.push({ width, height, fps });
-  });
-  const found = candidates.find(candidate => candidate.fps !== null) ?? candidates[0];
-  return {
-    videoWidth: found?.width ?? null,
-    videoHeight: found?.height ?? null,
-    videoFps: found?.fps ?? null,
-    videoDirection: found ? direction : null,
-  };
-}
 
 /** Use the selected candidate pair, not an arbitrary pair from getStats(). */
 export function summarizeRTCStats(
   stats: RTCStatsReport,
   connectionState: RTCPeerConnectionState,
-  videoStats?: RTCStatsReport | null,
-  videoDirection: 'outbound-rtp' | 'inbound-rtp' = 'outbound-rtp',
+  capture?: MediaStreamTrack | null,
 ): NetworkMetrics {
   let selected: Record<string, unknown> | null = null;
   let remoteCandidate: Record<string, unknown> | null = null;
@@ -119,9 +122,7 @@ export function summarizeRTCStats(
     ? Math.round(Math.max(0, pair.availableOutgoingBitrate) / 100000) / 10 : null;
   // Without TURN, a 'relay' candidate would still need to be reported honestly.
   const candidateType = remote && typeof remote.candidateType === 'string' ? remote.candidateType : null;
-  const video = videoStats ? actualVideoRtp(videoStats, videoDirection) : {
-    videoWidth: null, videoHeight: null, videoFps: null, videoDirection: null,
-  };
+  const settings = capture?.getSettings();
   return {
     state: connectionState === 'connected'
       ? (rtt !== null && rtt > 500 ? 'unstable' : 'connected')
@@ -130,7 +131,9 @@ export function summarizeRTCStats(
     rttMs: rtt,
     estimatedUplinkMbps: available,
     direct: candidateType ? candidateType !== 'relay' : null,
-    ...video,
+    videoWidth: settings?.width ?? null,
+    videoHeight: settings?.height ?? null,
+    videoFps: settings?.frameRate ?? null,
   };
 }
 
