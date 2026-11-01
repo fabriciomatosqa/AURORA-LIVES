@@ -15,6 +15,8 @@ import { UpdateIndicator, UpdateSettings } from './updates/UpdateSettings';
 import { UpdatePrompt } from './updates/UpdatePrompt';
 import { ConnectionSpeedTest } from './connection/ConnectionSpeedTest';
 import { isAndroidRuntime } from './platform';
+import { isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { prepareRoomJoinSound, playRoomJoinSound, hasNewRemoteMember } from './sounds/roomJoinSound';
 
 type Theme = 'dark' | 'light' | 'system';
@@ -44,6 +46,8 @@ export function MediaPlayer({ stream, muted, label }: { stream: MediaStream; mut
   const video = useRef<HTMLVideoElement>(null);
   const tile = useRef<HTMLDivElement>(null);
   const fullscreenMode = useRef<'off' | 'native' | 'viewport'>('off');
+  const windowFullscreenOwned = useRef(false);
+  const enteringFullscreen = useRef(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [error, setError] = useState('');
 
@@ -64,6 +68,10 @@ export function MediaPlayer({ stream, muted, label }: { stream: MediaStream; mut
     setFullscreen(false);
     if (current === 'native' && document.fullscreenElement === tile.current) {
       void document.exitFullscreen?.().catch(() => { /* Browser may have already exited */ });
+    }
+    if (windowFullscreenOwned.current) {
+      windowFullscreenOwned.current = false;
+      void getCurrentWindow().setFullscreen(false).catch(() => {});
     }
   }
 
@@ -89,36 +97,65 @@ export function MediaPlayer({ stream, muted, label }: { stream: MediaStream; mut
       if (document.fullscreenElement === mountedTile) {
         void document.exitFullscreen?.().catch(() => {});
       }
+      if (windowFullscreenOwned.current) {
+        windowFullscreenOwned.current = false;
+        void getCurrentWindow().setFullscreen(false).catch(() => {});
+      }
     };
   }, []);
 
   async function toggleFullscreen() {
+    if (enteringFullscreen.current) return;
     if (fullscreenMode.current !== 'off') {
       exitFullscreen();
       return;
     }
     const container = tile.current;
     if (!container) return;
-    // Picture-in-picture and fullscreen are mutually exclusive on most engines.
-    if (document.pictureInPictureElement === video.current) {
-      try { await document.exitPictureInPicture(); } catch { /* Continue with video */ }
-    }
-    // Trigger the native API directly from the user's tap or click.
-    // If unavailable/rejected, CSS still fills the application viewport.
-    if (typeof container.requestFullscreen === 'function') {
-      try {
-        await container.requestFullscreen();
-        if (document.fullscreenElement === container) {
-          fullscreenMode.current = 'native';
+    enteringFullscreen.current = true;
+    try {
+      // Picture-in-picture and fullscreen are mutually exclusive on most engines.
+      if (document.pictureInPictureElement === video.current) {
+        try { await document.exitPictureInPicture(); } catch { /* Continue with video */ }
+      }
+
+      // Tauri desktop needs the *native window* in fullscreen too, not just
+      // the WebView content. The same attempt is safe on Android (with a
+      // viewport fallback when this operation is unsupported).
+      if (isTauri()) {
+        try {
+          const appWindow = getCurrentWindow();
+          const alreadyFullscreen = await appWindow.isFullscreen();
+          if (!alreadyFullscreen) {
+            await appWindow.setFullscreen(true);
+            windowFullscreenOwned.current = true;
+          }
+          fullscreenMode.current = 'viewport';
           setFullscreen(true);
           setError('');
           return;
-        }
-      } catch { /* Android or desktop webview declined native fullscreen */ }
+        } catch { /* Native window fullscreen unsupported or not permitted */ }
+      }
+
+      // In browsers and WebViews that honor Element Fullscreen API, use it.
+      if (typeof container.requestFullscreen === 'function') {
+        try {
+          await container.requestFullscreen();
+          if (document.fullscreenElement === container) {
+            fullscreenMode.current = 'native';
+            setFullscreen(true);
+            setError('');
+            return;
+          }
+        } catch { /* Android system WebView may reject native fullscreen */ }
+      }
+      // Guaranteed content-area fallback: video never remounts or drops audio.
+      fullscreenMode.current = 'viewport';
+      setFullscreen(true);
+      setError('');
+    } finally {
+      enteringFullscreen.current = false;
     }
-    fullscreenMode.current = 'viewport';
-    setFullscreen(true);
-    setError('');
   }
 
   async function floatVideo() {
