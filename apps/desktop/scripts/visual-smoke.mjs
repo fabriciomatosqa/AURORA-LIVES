@@ -36,6 +36,35 @@ async function checkNoOverflow(page, view) {
     'Overflow horizontal no viewport ' + view + ': ' + JSON.stringify(measurements));
 }
 
+// Exercise the actual React player, not just CSS rules or a mocked button.
+// Force Android WebView's "native fullscreen unsupported" behavior to verify
+// the reliable viewport fallback, then restore the normal stage.
+async function checkPlayerFullscreen(page, device) {
+  await page.evaluate(async () => {
+    const { mountFullscreenHarness } = await import('/scripts/fullscreen-harness.tsx');
+    mountFullscreenHarness();
+  });
+  const tile = page.locator('#aurora-fullscreen-smoke-host .stream-tile');
+  await tile.waitFor();
+  await tile.evaluate(element => {
+    Object.defineProperty(element, 'requestFullscreen', {
+      configurable: true,
+      value: async () => { throw new Error('WebView não suporta fullscreen nativo'); },
+    });
+  });
+  await tile.getByRole('button', { name: 'Exibir em tela cheia: Transmissão de teste' }).click();
+  await page.waitForFunction(() =>
+    document.querySelector('#aurora-fullscreen-smoke-host .stream-tile')?.getAttribute('data-fullscreen') === 'true');
+  const bounds = await tile.boundingBox();
+  const viewport = page.viewportSize();
+  assert.ok(bounds && viewport &&
+    bounds.width >= viewport.width - 2 && bounds.height >= viewport.height - 2,
+    'Fullscreen viewport insuficiente em ' + device + ': ' + JSON.stringify({ bounds, viewport }));
+  await tile.getByRole('button', { name: 'Sair da tela cheia de Transmissão de teste' }).click();
+  await page.waitForFunction(() =>
+    document.querySelector('#aurora-fullscreen-smoke-host .stream-tile')?.getAttribute('data-fullscreen') === 'false');
+}
+
 try {
   await waitForVite();
   browser = await chromium.launch({
@@ -47,6 +76,7 @@ try {
   await page.goto('http://127.0.0.1:1420', { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Criar sala agora' }).waitFor();
   await page.getByRole('button', { name: 'Entrar na sala' }).waitFor();
+  await checkPlayerFullscreen(page, 'desktop 1440 × 900');
   await checkNoOverflow(page, '1440');
   await page.screenshot({ path: resolve(screenshots, 'aurora-desktop-dark.png'), fullPage: true });
   await page.getByRole('button', { name: 'Abrir configurações' }).click();
@@ -84,6 +114,7 @@ try {
   await android.goto('http://127.0.0.1:1420', { waitUntil: 'networkidle' });
   await android.getByRole('navigation', { name: 'Navegação Android' }).waitFor();
   await android.getByRole('button', { name: 'Criar sala agora' }).waitFor();
+  await checkPlayerFullscreen(android, 'Android retrato 393 × 873');
   await checkNoOverflow(android, 'Android portrait 393');
   await android.screenshot({ path: resolve(screenshots, 'aurora-android-portrait.png'), fullPage: true });
 
@@ -101,6 +132,17 @@ try {
 
 
   await android.setViewportSize({ width: 873, height: 393 });
+  const tileLandscape = android.locator('#aurora-fullscreen-smoke-host .stream-tile');
+  await tileLandscape.getByRole('button', { name: 'Exibir em tela cheia: Transmissão de teste' }).click();
+  await android.waitForFunction(() =>
+    document.querySelector('#aurora-fullscreen-smoke-host .stream-tile')?.getAttribute('data-fullscreen') === 'true');
+  const landscapeBounds = await tileLandscape.boundingBox();
+  assert.ok(landscapeBounds && landscapeBounds.width >= 871 && landscapeBounds.height >= 391,
+    'Fullscreen Android paisagem não preenche a tela: ' + JSON.stringify(landscapeBounds));
+  // Android's Back button is routed through the app's existing popstate handler.
+  await android.evaluate(() => window.history.back());
+  await android.waitForFunction(() =>
+    document.querySelector('#aurora-fullscreen-smoke-host .stream-tile')?.getAttribute('data-fullscreen') === 'false');
   await checkNoOverflow(android, 'Android landscape 873');
   await android.screenshot({ path: resolve(screenshots, 'aurora-android-landscape.png'), fullPage: true });
   await android.close();

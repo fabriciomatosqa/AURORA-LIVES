@@ -1,11 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Permissões mínimas para acompanhar o progresso de atualizações verificadas.",
+  "description": "Permissões para atualizações verificadas e modo de vídeo em tela cheia.",
   "windows": ["main"],
   "permissions": [
     "core:event:allow-listen",
     "core:event:allow-unlisten",
-    "core:app:allow-version"
+    "core:app:allow-version",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-set-fullscreen"
   ]
 }

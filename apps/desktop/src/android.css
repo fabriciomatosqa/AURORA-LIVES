@@ -188,6 +188,16 @@ html[data-platform="android"] .stage-empty-art { transform:scale(.8); margin:-8p
 html[data-platform="android"] .stage-empty h3 { font-size:16px; }
 html[data-platform="android"] .stage-empty>p { font-size:10px; }
 html[data-platform="android"] .stream-tile video { max-height:none; width:100%; aspect-ratio:16/9; }
+/* Override the mobile inline-video aspect ratio when the stream is fullscreen.
+   The native API may be unavailable in Tauri Android's system WebView. */
+html[data-platform="android"] .stream-tile:is(:fullscreen, .stream-tile-fullscreen) video {
+  width: 100%; height: 100%; max-height: none; aspect-ratio: auto;
+  object-fit: contain;
+}
+html[data-platform="android"] .stream-tile:is(:fullscreen, .stream-tile-fullscreen) {
+  border-radius: 0; margin: 0; padding: 0;
+}
+
 html[data-platform="android"] .broadcast-controls { padding:12px 13px; gap:7px; }
 html[data-platform="android"] .broadcast-control {
   min-height:58px; flex:1 1 28%; min-width:0;

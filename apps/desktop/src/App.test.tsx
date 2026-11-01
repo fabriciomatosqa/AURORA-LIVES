@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import App from './App';
+import App, { MediaPlayer } from './App';
 
 describe('nova interface AURORA LIVES', () => {
   it('exibe as opções reais de criar e entrar em uma sala por código', () => {
@@ -12,7 +12,7 @@ describe('nova interface AURORA LIVES', () => {
     expect(html).toContain('Informe um nome diferente de Visitante');
     expect(html).toContain('Sem cadastro');
     expect(html).toContain('AURORA LIVES');
-    expect(html).toContain('Prévia 0.0.34');
+    expect(html).toContain('Prévia 0.0.35');
   });
 
   it('mantém a logo original e as regiões de navegação acessíveis', () => {
@@ -23,6 +23,17 @@ describe('nova interface AURORA LIVES', () => {
     expect(html).toContain('aria-label="Painel Aurora"');
     expect(html).toContain('aria-label="Espaço e participantes"');
     expect(html).toContain('aria-label="Bem-vindo ao AURORA LIVES"');
+  });
+
+  it('mostra controle de tela cheia em todos os vídeos, inclusive para espectadores Android', () => {
+    const html = renderToStaticMarkup(<MediaPlayer
+      stream={null as unknown as MediaStream} muted={false} label="Transmissão de Branko"/>);
+    expect(html).toContain('Exibir em tela cheia: Transmissão de Branko');
+    expect(html).toContain('stream-fullscreen-toggle');
+    expect(html).toContain('aria-pressed="false"');
+    expect(html.toLowerCase()).toContain('playsinline=""');
+    expect(html).toContain('data-fullscreen="false"');
+    expect(html).toContain('Transmissão de Branko');
   });
 
   it('não apresenta funcionalidades futuras como ações disponíveis', () => {

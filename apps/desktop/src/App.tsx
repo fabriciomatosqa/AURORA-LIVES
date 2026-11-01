@@ -3,7 +3,7 @@ import {
   Activity, ArrowRight, Bookmark, Check, ChevronDown, CircleHelp, Copy,
   Gauge, Hash, Headphones, Home, Info, Link2, LockKeyhole, Menu,
   MessageCircle, Mic, MicOff, MonitorUp, Moon, PictureInPicture2, Plus,
-  RadioTower, Send, Settings2, ShieldCheck, Sparkles, Sun, Trash2,
+  Maximize2, Minimize2, RadioTower, Send, Settings2, ShieldCheck, Sparkles, Sun, Trash2,
   Users, VideoOff, Volume2, VolumeX, Wifi, X,
 } from 'lucide-react';
 import { RoomSession, emptyRoom, type RemoteMedia, type RoomSnapshot } from './p2p/session';
@@ -15,6 +15,8 @@ import { UpdateIndicator, UpdateSettings } from './updates/UpdateSettings';
 import { UpdatePrompt } from './updates/UpdatePrompt';
 import { ConnectionSpeedTest } from './connection/ConnectionSpeedTest';
 import { isAndroidRuntime } from './platform';
+import { isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { prepareRoomJoinSound, playRoomJoinSound, hasNewRemoteMember } from './sounds/roomJoinSound';
 
 type Theme = 'dark' | 'light' | 'system';
@@ -40,9 +42,15 @@ function Avatar({ name, own = false, size = 'normal' }: { name: string; own?: bo
   </span>;
 }
 
-function MediaPlayer({ stream, muted, label }: { stream: MediaStream; muted: boolean; label: string }) {
+export function MediaPlayer({ stream, muted, label }: { stream: MediaStream; muted: boolean; label: string }) {
   const video = useRef<HTMLVideoElement>(null);
+  const tile = useRef<HTMLDivElement>(null);
+  const fullscreenMode = useRef<'off' | 'native' | 'viewport'>('off');
+  const windowFullscreenOwned = useRef(false);
+  const enteringFullscreen = useRef(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [error, setError] = useState('');
+
   useEffect(() => {
     const node = video.current;
     if (!node) return;
@@ -51,21 +59,128 @@ function MediaPlayer({ stream, muted, label }: { stream: MediaStream; muted: boo
     return () => { node.srcObject = null; };
   }, [stream]);
 
+  // Android's WebView may reject requestFullscreen when its native ChromeClient
+  // does not provide a fullscreen custom view. Keep a viewport-sized fallback
+  // that does NOT re-mount the video, close its MediaStream, or alter the call.
+  function exitFullscreen() {
+    const current = fullscreenMode.current;
+    fullscreenMode.current = 'off';
+    setFullscreen(false);
+    if (current === 'native' && document.fullscreenElement === tile.current) {
+      void document.exitFullscreen?.().catch(() => { /* Browser may have already exited */ });
+    }
+    if (windowFullscreenOwned.current) {
+      windowFullscreenOwned.current = false;
+      void getCurrentWindow().setFullscreen(false).catch(() => {});
+    }
+  }
+
+  useEffect(() => {
+    const mountedTile = tile.current;
+    const onFullscreenChange = () => {
+      if (fullscreenMode.current === 'native' && document.fullscreenElement !== mountedTile) {
+        fullscreenMode.current = 'off';
+        setFullscreen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && fullscreenMode.current === 'viewport') {
+        event.preventDefault();
+        exitFullscreen();
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      window.removeEventListener('keydown', onKeyDown);
+      if (document.fullscreenElement === mountedTile) {
+        void document.exitFullscreen?.().catch(() => {});
+      }
+      if (windowFullscreenOwned.current) {
+        windowFullscreenOwned.current = false;
+        void getCurrentWindow().setFullscreen(false).catch(() => {});
+      }
+    };
+  }, []);
+
+  async function toggleFullscreen() {
+    if (enteringFullscreen.current) return;
+    if (fullscreenMode.current !== 'off') {
+      exitFullscreen();
+      return;
+    }
+    const container = tile.current;
+    if (!container) return;
+    enteringFullscreen.current = true;
+    try {
+      // Picture-in-picture and fullscreen are mutually exclusive on most engines.
+      if (document.pictureInPictureElement === video.current) {
+        try { await document.exitPictureInPicture(); } catch { /* Continue with video */ }
+      }
+
+      // Tauri desktop needs the *native window* in fullscreen too, not just
+      // the WebView content. The same attempt is safe on Android (with a
+      // viewport fallback when this operation is unsupported).
+      if (isTauri()) {
+        try {
+          const appWindow = getCurrentWindow();
+          const alreadyFullscreen = await appWindow.isFullscreen();
+          if (!alreadyFullscreen) {
+            await appWindow.setFullscreen(true);
+            windowFullscreenOwned.current = true;
+          }
+          fullscreenMode.current = 'viewport';
+          setFullscreen(true);
+          setError('');
+          return;
+        } catch { /* Native window fullscreen unsupported or not permitted */ }
+      }
+
+      // In browsers and WebViews that honor Element Fullscreen API, use it.
+      if (typeof container.requestFullscreen === 'function') {
+        try {
+          await container.requestFullscreen();
+          if (document.fullscreenElement === container) {
+            fullscreenMode.current = 'native';
+            setFullscreen(true);
+            setError('');
+            return;
+          }
+        } catch { /* Android system WebView may reject native fullscreen */ }
+      }
+      // Guaranteed content-area fallback: video never remounts or drops audio.
+      fullscreenMode.current = 'viewport';
+      setFullscreen(true);
+      setError('');
+    } finally {
+      enteringFullscreen.current = false;
+    }
+  }
+
   async function floatVideo() {
     const node = video.current;
     if (!node?.requestPictureInPicture || !document.pictureInPictureEnabled) return;
     try {
       setError('');
+      if (fullscreenMode.current !== 'off') exitFullscreen();
       await node.requestPictureInPicture();
     } catch {
       setError('Janela flutuante indisponível neste dispositivo.');
     }
   }
 
-  return <div className="stream-tile">
+  return <div ref={tile} className={'stream-tile' + (fullscreen ? ' stream-tile-fullscreen' : '')}
+    data-fullscreen={fullscreen ? 'true' : 'false'}>
     <video ref={video} autoPlay playsInline muted={muted} controls aria-label={label} />
     <span className="stream-title"><span className="stream-title-icon"><MonitorUp size={14}/></span>{label}</span>
-    {typeof document !== 'undefined' && document.pictureInPictureEnabled && <button
+    <button type="button" className="stream-fullscreen-toggle icon-control"
+      onClick={() => void toggleFullscreen()} aria-pressed={fullscreen}
+      aria-label={(fullscreen ? 'Sair da tela cheia de ' : 'Exibir em tela cheia: ') + label}
+      title={fullscreen ? 'Sair da tela cheia' : 'Tela cheia'}>
+      {fullscreen ? <Minimize2 size={21}/> : <Maximize2 size={21}/>}
+    </button>
+    {typeof document !== 'undefined' && document.pictureInPictureEnabled && !fullscreen && <button
       type="button" className="float-video icon-control" onClick={() => void floatVideo()}
       aria-label={'Exibir ' + label + ' em janela flutuante'} title="Janela flutuante">
       <PictureInPicture2 size={17}/>
@@ -163,6 +278,16 @@ export default function App() {
     // on every tab change, which would trap users in an ever-growing stack.
     window.history.pushState({ auroraMobile: true }, '');
     function onMobileBack() {
+      // Close the viewer before navigating away from the room or asking to leave.
+      // This also handles Android WebViews that only support CSS fullscreen.
+      const closeViewer = document.querySelector<HTMLButtonElement>(
+        '.stream-tile[data-fullscreen="true"] .stream-fullscreen-toggle',
+      );
+      if (closeViewer) {
+        closeViewer.click();
+        window.history.pushState({ auroraMobile: true }, '');
+        return;
+      }
       const current = backState.current;
       if (current.settingsOpen) setSettingsOpen(false);
       else if (current.sidebarOpen) setSidebarOpen(false);
@@ -441,7 +566,7 @@ export default function App() {
         <UpdateIndicator updater={updater} onClick={() => setSettingsOpen(true)}/>
         <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
           <span className="status-indicator"/>
-          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.34'}
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.35'}
         </span>
         <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
@@ -799,7 +924,7 @@ export default function App() {
           <UpdateSettings updater={updater} connected={connected}/>
           <div className="privacy-disclaimer"><LockKeyhole size={19}/><p>Esta versão usa apelidos locais, não contas. Quem souber o código poderá entrar na sala enquanto o anfitrião estiver online.</p></div>
         </div>
-        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.34</span>
+        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.35</span>
           <button onClick={() => setSettingsOpen(false)}>Concluído <ArrowRight size={17}/></button></footer>
       </section>
     </div>}

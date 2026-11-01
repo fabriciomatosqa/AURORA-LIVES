@@ -180,6 +180,41 @@
 .stage-empty-caption .status-indicator { width: 5px; height: 5px; background: #83a0bc; }
 .stream-tile { position: relative; border-radius: 11px; border: 1px solid rgba(125, 161, 204, .24); background: #020914; overflow: hidden; min-width: 0; }
 .stream-tile video { width: 100%; height: auto; display: block; aspect-ratio: 16/9; max-height: 520px; object-fit: contain; }
+/* Video player-only fullscreen: native Fullscreen API when the WebView supports
+   it; a viewport-sized overlay if Android or a desktop WebView rejects it. */
+.stream-tile:fullscreen,
+.stream-tile.stream-tile-fullscreen {
+  position: fixed; inset: 0; z-index: 2147483647;
+  width: 100%; height: 100%; min-width: 0; min-height: 0;
+  max-width: none; max-height: none; margin: 0; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 0; background: #000;
+  overflow: hidden; box-sizing: border-box;
+}
+.stream-tile.stream-tile-fullscreen:not(:fullscreen) {
+  height: 100vh; height: 100dvh;
+}
+.stream-tile:fullscreen video,
+.stream-tile.stream-tile-fullscreen video {
+  display: block; flex: 1 1 auto; min-width: 0; min-height: 0;
+  width: 100%; height: 100%; max-height: none;
+  aspect-ratio: auto; object-fit: contain; background: #000;
+}
+.stream-fullscreen-toggle {
+  position: absolute; z-index: 5; top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  width: 44px; height: 44px; display: grid; place-items: center;
+  border: 1px solid rgba(164, 198, 237, .4); border-radius: 10px;
+  color: white; background: rgba(9, 18, 34, .85);
+  backdrop-filter: blur(7px); cursor: pointer;
+}
+.stream-fullscreen-toggle:hover, .stream-fullscreen-toggle:focus-visible {
+  background: #163957; outline: 2px solid #91ecf6; outline-offset: 2px;
+}
+.stream-tile:is(:fullscreen, .stream-tile-fullscreen) .stream-title {
+  bottom: max(12px, env(safe-area-inset-bottom));
+}
+
 .stream-title { position: absolute; left: 9px; bottom: 9px; display: flex; align-items: center; gap: 7px; color: white; padding: 7px 10px 7px 7px; font-size: 11px; background: rgba(7, 15, 30, .84); border-radius: 8px; backdrop-filter: blur(8px); pointer-events: none; }
 .stream-title-icon { width: 23px; height: 23px; display: grid; place-items: center; border-radius: 6px; background: rgba(71, 188, 207, .2); color: #8cf0ee; }
 .float-video { position: absolute; right: 9px; bottom: 10px; color: #c6dfff; background: rgba(9, 18, 34, .8); border: 1px solid rgba(164, 198, 237, .18); backdrop-filter: blur(7px); }
