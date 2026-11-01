@@ -59,6 +59,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar ícones." }
           npm run tauri -- build --no-bundle
           if ($LASTEXITCODE -ne 0) { throw "Falha ao compilar o aplicativo Windows." }
+      # The Windows PE must be signed BEFORE being packed by Inno Setup.
+      # Unsigned installers may appear to install but their aurora-lives.exe
+      # is blocked by Windows 11 Smart App Control.
+      - name: Assinar executável Windows (certificado confiável obrigatório)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+          WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
+        run: |
+          ./scripts/sign-windows-artifact.ps1 -FilePath "src-tauri/target/release/aurora-lives.exe"
+
       - name: Criar instalador Inno Setup por usuário
         if: runner.os == 'Windows'
         shell: pwsh
@@ -70,6 +82,15 @@ jobs:
           if (-not (Test-Path "installer-win/AURORA-LIVES-Windows-x64-Setup.exe")) {
             throw "Instalador Windows não foi gerado."
           }
+      - name: Assinar instalador Windows (certificado confiável obrigatório)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+          WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
+        run: |
+          ./scripts/sign-windows-artifact.ps1 -FilePath "installer-win/AURORA-LIVES-Windows-x64-Setup.exe"
+
       - name: Guardar instalador
         uses: actions/upload-artifact@v4
         with:
@@ -127,7 +148,7 @@ jobs:
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \
             --title "AURORA LIVES $VERSION — Atualização via GitHub" \
-            --notes "Instaladores Windows Inno Setup e Linux DEB. Atualização diretamente pelo AURORA LIVES, sem Microsoft Store. Os arquivos são verificados com SHA-256. Os instaladores Windows continuam sem assinatura digital e podem ser bloqueados pelo Smart App Control." \
+            --notes "Instaladores Windows Inno Setup assinados digitalmente com certificado Authenticode confiável e Linux DEB. Atualização diretamente pelo AURORA LIVES, sem Microsoft Store. Arquivos verificados com SHA-256." \
             --draft --prerelease --latest=false \
             release/AURORA-LIVES-Windows-x64-Setup.exe \
             release/AURORA-LIVES-Linux-amd64.deb \
