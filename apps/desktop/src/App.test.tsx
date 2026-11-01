@@ -31,7 +31,7 @@ describe('nova interface AURORA LIVES', () => {
     expect(html).toContain('Exibir em tela cheia: Transmissão de Branko');
     expect(html).toContain('stream-fullscreen-toggle');
     expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain('playsinline=""');
+    expect(html.toLowerCase()).toContain('playsinline=""');
     expect(html).toContain('data-fullscreen="false"');
     expect(html).toContain('Transmissão de Branko');
   });
