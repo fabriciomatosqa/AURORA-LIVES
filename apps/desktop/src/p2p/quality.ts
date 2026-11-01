@@ -51,7 +51,7 @@ export function actualVideoRtp(
   stats: RTCStatsReport,
   direction: 'outbound-rtp' | 'inbound-rtp',
 ): Pick<NetworkMetrics, 'videoWidth' | 'videoHeight' | 'videoFps' | 'videoDirection'> {
-  let found: { width: number | null; height: number | null; fps: number | null } | null = null;
+  const candidates: { width: number | null; height: number | null; fps: number | null }[] = [];
   stats.forEach(entry => {
     if (entry.type !== direction) return;
     const record = entry as unknown as Record<string, unknown>;
@@ -62,8 +62,9 @@ export function actualVideoRtp(
     const height = typeof record.frameHeight === 'number' && record.frameHeight > 0 ? record.frameHeight : null;
     const fps = typeof record.framesPerSecond === 'number' && record.framesPerSecond >= 0
       ? Math.round(record.framesPerSecond * 10) / 10 : null;
-    if (!found || (fps !== null && found.fps === null)) found = { width, height, fps };
+    candidates.push({ width, height, fps });
   });
+  const found = candidates.find(candidate => candidate.fps !== null) ?? candidates[0];
   return {
     videoWidth: found?.width ?? null,
     videoHeight: found?.height ?? null,
