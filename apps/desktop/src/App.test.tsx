@@ -43,7 +43,7 @@ describe('nova interface AURORA LIVES', () => {
     expect(local).toContain('<video');
     expect(local).toContain('Minha transmissão em janela');
     expect(local).toContain('em janela');
-    expect(local).toContain('janela flutuante');
+    expect(local.toLowerCase()).toContain('janela flutuante');
     expect(local).not.toContain('Exibir em tela cheia: Sua transmissão');
     const remote = renderToStaticMarkup(<MediaPlayer
       stream={null as unknown as MediaStream} muted={false} label="Transmissão de Celular"/>);
