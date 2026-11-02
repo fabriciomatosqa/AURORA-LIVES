@@ -11,6 +11,7 @@ export type ImageMime = 'image/png' | 'image/jpeg' | 'image/webp';
 export type ImageWirePart = {
   type: 'image-part'; id: string; index: number; total: number;
   mime: ImageMime; data: string; text: string; sentAt: number;
+  senderId?: string; // added exclusively by authenticated host
 };
 export function validImageDataUrl(value: unknown): value is string {
   if (typeof value !== 'string' || value.length > MAX_IMAGE_BASE64 + 32) return false;
@@ -129,6 +130,7 @@ export function decodeWire(value: unknown): Wire | null {
         && value.data.length <= IMAGE_CHUNK_SIZE && /^[A-Za-z0-9+/=]+$/.test(value.data)
         && typeof value.text === 'string' && (value.text === '' || cleanText(value.text) !== null)
         && typeof value.sentAt === 'number' && Number.isFinite(value.sentAt)
+        && (value.senderId === undefined || (typeof value.senderId === 'string' && value.senderId.length > 0 && value.senderId.length < 150))
         ? value as ImageWirePart : null;
     case 'chat':
       return chat(value.message) ? { type: 'chat', message: value.message } : null;
