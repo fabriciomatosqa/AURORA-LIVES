@@ -129,6 +129,29 @@ describe('fluxos P2P de texto (transportador PeerJS simulado)', () => {
     two.session.stop();
   });
 
+  it('envia imagens pequenas em fragmentos P2P entre convidados e anfitrião', async () => {
+    const host = make('Anfitrião'), ana = make('Ana'), bia = make('Bia');
+    host.session.startHosting(CODE);
+    await wait(() => host.snapshot().phase === 'connected');
+    ana.session.startJoining(CODE);
+    bia.session.startJoining(CODE);
+    await wait(() => ana.snapshot().phase === 'connected' && bia.snapshot().phase === 'connected'
+      && host.snapshot().members.length === 3);
+    // Enough base64 data to require multiple packets over the DataChannel.
+    const image = 'data:image/png;base64,' + 'A'.repeat(32768);
+    expect(ana.session.sendImage(image, 'Meu print')).toBe(true);
+    await wait(() => host.snapshot().messages.length === 1 && bia.snapshot().messages.length === 1);
+    expect(host.snapshot().messages[0]).toMatchObject({ author: 'Ana', text: 'Meu print', image });
+    expect(bia.snapshot().messages[0].image).toBe(image);
+    expect(ana.snapshot().messages).toHaveLength(1); // Host echo deduplicated.
+    expect(host.session.sendImage(image)).toBe(true);
+    await wait(() => ana.snapshot().messages.length === 2 && bia.snapshot().messages.length === 2);
+    expect(ana.snapshot().messages[1].image).toBe(image);
+    expect(host.session.sendImage('data:image/svg+xml;base64,AAAA')).toBe(false);
+    expect(ana.session.sendImage('data:image/png;base64,' + 'A'.repeat(150004))).toBe(false);
+    host.session.stop(); ana.session.stop(); bia.session.stop();
+  });
+
   it('recusa quem tenta usar o nome do anfitrião com caixa ou espaço diferentes', async () => {
     const host = make('Ana Maria'), first = make('Beatriz'), duplicate = make('aNA   MARIA');
     host.session.startHosting(CODE);
