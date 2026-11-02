@@ -189,6 +189,18 @@ export function MediaPlayer({ stream, muted, label }: { stream: MediaStream; mut
   </div>;
 }
 
+/** Local capture never renders inside itself: prevents hall-of-mirrors on a shared monitor.
+ * The actual MediaStream stays owned by RoomSession and remains sent to peers. */
+export function LocalBroadcastStatus() {
+  return <div className="local-broadcast-status" role="status" aria-label="Sua transmissão está ativa">
+    <span className="local-broadcast-symbol"><MonitorUp size={27}/></span>
+    <strong>Sua tela está sendo transmitida</strong>
+    <p>A prévia local está oculta para evitar o efeito espelho.
+      Os outros participantes continuam recebendo sua tela normalmente.</p>
+    <span className="local-broadcast-hint">Para assistir em tela cheia, use outro dispositivo participante.</span>
+  </div>;
+}
+
 function AudioListener({ media, name, muted }: { media: RemoteMedia; name: string; muted: boolean }) {
   const audio = useRef<HTMLAudioElement>(null);
   useEffect(() => {
@@ -566,7 +578,7 @@ export default function App() {
         <UpdateIndicator updater={updater} onClick={() => setSettingsOpen(true)}/>
         <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
           <span className="status-indicator"/>
-          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.35'}
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.36'}
         </span>
         <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
@@ -709,7 +721,7 @@ export default function App() {
             </header>
 
             <div className="stage-screen">
-              {room.localScreen && <MediaPlayer stream={room.localScreen} muted label="Sua transmissão"/>}
+              {room.localScreen && <LocalBroadcastStatus/>}
               {liveStreams.map(item => <MediaPlayer key={item.id} stream={item.stream} muted={false} label={'Transmissão de ' + memberName(item.peerId)}/>)}
               {!broadcasting && <div className="stage-empty">
                 <div className="stage-empty-art" aria-hidden="true">
@@ -924,7 +936,7 @@ export default function App() {
           <UpdateSettings updater={updater} connected={connected}/>
           <div className="privacy-disclaimer"><LockKeyhole size={19}/><p>Esta versão usa apelidos locais, não contas. Quem souber o código poderá entrar na sala enquanto o anfitrião estiver online.</p></div>
         </div>
-        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.35</span>
+        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.36</span>
           <button onClick={() => setSettingsOpen(false)}>Concluído <ArrowRight size={17}/></button></footer>
       </section>
     </div>}
