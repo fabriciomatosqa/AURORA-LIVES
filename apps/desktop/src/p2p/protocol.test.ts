@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanName, cleanText, decodeWire, formatRoomCode, generateRoomCode, hostPeerId, isNameTaken, mergeMessages, normalizeRoomCode, normalizedName, validDisplayName } from './protocol';
+import { validImageDataUrl, IMAGE_MAX_CHUNKS, cleanName, cleanText, decodeWire, formatRoomCode, generateRoomCode, hostPeerId, isNameTaken, mergeMessages, normalizeRoomCode, normalizedName, validDisplayName } from './protocol';
 
 describe('convites e identificação', () => {
   it('gera códigos secretos de 16 caracteres e formato legível', () => {
@@ -57,6 +57,22 @@ describe('mensagens de terceiros', () => {
     expect(decodeWire({ type: 'members', members: new Array(11).fill({ id: 'a', name: 'A', host: false }) })).toBeNull();
     expect(decodeWire({ type: 'chat', message: { id: '1' } })).toBeNull();
   });
+  it('aceita exclusivamente fragmentos P2P de imagens pequenas e MIME seguro', () => {
+    expect(validImageDataUrl('data:image/png;base64,' + 'A'.repeat(120))).toBe(true);
+    expect(validImageDataUrl('data:image/svg+xml;base64,' + 'A'.repeat(120))).toBe(false);
+    expect(validImageDataUrl('data:image/png;base64,' + 'A'.repeat(200000))).toBe(false);
+    const part = {
+      type: 'image-part', id: '12345678-1234-1234', index: 0, total: 2,
+      mime: 'image/webp', data: 'AAAA', text: '', sentAt: 10,
+    };
+    expect(decodeWire(part)).toEqual(part);
+    expect(decodeWire({ ...part, mime: 'image/svg+xml' })).toBeNull();
+    expect(decodeWire({ ...part, index: -1 })).toBeNull();
+    expect(decodeWire({ ...part, total: IMAGE_MAX_CHUNKS + 1 })).toBeNull();
+    expect(decodeWire({ ...part, data: 'x'.repeat(8193) })).toBeNull();
+    expect(decodeWire({ ...part, senderId: {} })).toBeNull();
+  });
+
   it('deduplica o histórico ao receber eco do anfitrião', () => {
     const message = { id: '1', senderId: 'peer1', author: 'Ana', text: 'Olá', sentAt: 1 };
     expect(mergeMessages([message], [message])).toEqual([message]);

@@ -4,6 +4,21 @@
  */
 export const ROOM_CAPACITY = 10;
 export const MAX_MESSAGE_LENGTH = 2000;
+export const MAX_IMAGE_BASE64 = 150_000; // ~110 KiB, bounded P2P message
+export const IMAGE_CHUNK_SIZE = 8192;
+export const IMAGE_MAX_CHUNKS = Math.ceil(MAX_IMAGE_BASE64 / IMAGE_CHUNK_SIZE);
+export type ImageMime = 'image/png' | 'image/jpeg' | 'image/webp';
+export type ImageWirePart = {
+  type: 'image-part'; id: string; index: number; total: number;
+  mime: ImageMime; data: string; text: string; sentAt: number;
+  senderId?: string; // added exclusively by authenticated host
+};
+export function validImageDataUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > MAX_IMAGE_BASE64 + 32) return false;
+  const match = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
+  return !!match && match[2].length <= MAX_IMAGE_BASE64 && match[2].length % 4 === 0;
+}
+
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 32 unambiguous characters
 
 export type Member = { id: string; name: string; host: boolean };
@@ -12,6 +27,7 @@ export type ChatMessage = {
   senderId: string;
   author: string;
   text: string;
+  image?: string;
   sentAt: number;
 };
 export type Wire =
@@ -20,6 +36,7 @@ export type Wire =
   | { type: 'members'; members: Member[] }
   | { type: 'ready' }
   | { type: 'send'; text: string }
+  | ImageWirePart
   | { type: 'chat'; message: ChatMessage }
   | { type: 'reject'; reason: 'full' | 'invalid' | 'name-taken' | 'name-required' };
 
@@ -85,7 +102,9 @@ function chat(value: unknown): value is ChatMessage {
     && value.senderId.length > 0 && value.senderId.length < 150
     && typeof value.author === 'string' && value.author.length > 0
     && value.author.length <= 32 && typeof value.text === 'string'
-    && cleanText(value.text) !== null && typeof value.sentAt === 'number' && Number.isFinite(value.sentAt);
+    && (cleanText(value.text) !== null || (value.text === '' && validImageDataUrl(value.image)))
+    && (value.image === undefined || validImageDataUrl(value.image))
+    && typeof value.sentAt === 'number' && Number.isFinite(value.sentAt);
 }
 
 /** Validate every remote payload before updating UI state. */
@@ -101,6 +120,18 @@ export function decodeWire(value: unknown): Wire | null {
     case 'send':
       return typeof value.text === 'string' && cleanText(value.text) !== null
         ? { type: 'send', text: cleanText(value.text)! } : null;
+    case 'image-part':
+      return typeof value.id === 'string' && /^[a-zA-Z0-9-]{8,80}$/.test(value.id)
+        && Number.isInteger(value.index) && Number.isInteger(value.total)
+        && Number(value.total) >= 1 && Number(value.total) <= IMAGE_MAX_CHUNKS
+        && Number(value.index) >= 0 && Number(value.index) < Number(value.total)
+        && (value.mime === 'image/png' || value.mime === 'image/jpeg' || value.mime === 'image/webp')
+        && typeof value.data === 'string' && value.data.length > 0
+        && value.data.length <= IMAGE_CHUNK_SIZE && /^[A-Za-z0-9+/=]+$/.test(value.data)
+        && typeof value.text === 'string' && (value.text === '' || cleanText(value.text) !== null)
+        && typeof value.sentAt === 'number' && Number.isFinite(value.sentAt)
+        && (value.senderId === undefined || (typeof value.senderId === 'string' && value.senderId.length > 0 && value.senderId.length < 150))
+        ? value as ImageWirePart : null;
     case 'chat':
       return chat(value.message) ? { type: 'chat', message: value.message } : null;
     case 'members':

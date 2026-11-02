@@ -1,10 +1,11 @@
 import { Peer, type DataConnection, type MediaConnection } from 'peerjs';
 import { capturePreset, preferVideoMotion, emptyMetrics, summarizeRTCStats, type QualityMode, type NetworkMetrics } from './quality';
 import {
-  ROOM_CAPACITY, cleanName, cleanText, decodeWire, generateRoomCode,
+  ROOM_CAPACITY, MAX_IMAGE_BASE64, cleanName, cleanText, decodeWire, generateRoomCode,
   hostPeerId, isNameTaken, mergeMessages, normalizeRoomCode, validDisplayName,
-  type ChatMessage, type Member, type Wire,
+  validImageDataUrl, type ChatMessage, type ImageWirePart, type Member, type Wire,
 } from './protocol';
+import { splitImageMessage } from './images';
 
 export type Phase = 'idle' | 'connecting' | 'reconnecting' | 'connected' | 'error';
 export type Role = 'host' | 'guest' | null;
@@ -50,6 +51,12 @@ export class RoomSession {
   private readonly mediaCalls = new Map<string, MediaConnection>();
   private localMic: MediaStream | null = null;
   private localDisplay: MediaStream | null = null;
+  // Reassemble short, bounded chunks rather than sending a single oversized
+  // WebRTC DataChannel payload (which fails on some Android/WebView engines).
+  private readonly imageBuffers = new Map<string, {
+    chunks: (string | undefined)[]; size: number; received: number;
+    total: number; mime: ImageWirePart['mime']; text: string; sentAt: number; expires: number;
+  }>();
   private joiningTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private statsTimer: ReturnType<typeof setInterval> | null = null;
@@ -101,6 +108,7 @@ export class RoomSession {
     this.localDisplay?.getTracks().forEach(track => track.stop());
     this.localMic = null;
     this.localDisplay = null;
+    this.imageBuffers.clear();
     this.autoPresetApplied = null;
     this.lastAutoAdjustmentAt = 0;
     for (const call of this.mediaCalls.values()) call.close();
@@ -242,6 +250,9 @@ export class RoomSession {
         if (wire.members.some(m => m.id === localId)) this.updateMembers(wire.members);
       } else if (wire.type === 'chat' && this.value.phase === 'connected') {
         this.emit({ messages: mergeMessages(this.value.messages, [wire.message]) });
+      } else if (wire.type === 'image-part' && this.value.phase === 'connected' && wire.senderId) {
+        // Guest trusts only its authenticated host link for forwarded sender IDs.
+        this.receiveImagePart(wire.senderId, wire, false);
       }
     });
     link.on('close', () => {
@@ -385,13 +396,16 @@ export class RoomSession {
         const incomingMember: Member = { id: link.peer, name: cleanName(wire.name), host: false };
         const members = [...this.value.members.filter(m => m.id !== link.peer), incomingMember];
         this.emit({ members });
-        link.send({ type: 'welcome', version: 1, members, messages: this.value.messages } satisfies Wire);
+        // Do not resend binary image history to new joiners (ephemeral room).
+        link.send({ type: 'welcome', version: 1, members,
+          messages: this.value.messages.filter(message => !message.image) } satisfies Wire);
         this.broadcastMembers();
         this.adjustAutoQuality(true);
         // Wait for guest's ready acknowledgement before attempting media calls.
         return;
       }
       if (wire.type === 'send') this.addHostMessage(link.peer, wire.text);
+      if (wire.type === 'image-part') this.receiveImagePart(link.peer, wire, true);
       if (wire.type === 'ready') this.syncMediaTargets();
     });
     link.on('close', () => this.dropGuest(link));
@@ -446,6 +460,80 @@ export class RoomSession {
     if (!this.hostLink?.open) return false;
     this.hostLink.send({ type: 'send', text: valid } satisfies Wire);
     return true;
+  }
+
+  /**
+   * No cloud storage: the sender sends bounded chunks over its existing P2P
+   * data channel, the host validates and relays, and receivers reassemble in
+   * RAM. A screenshot is visible only while this room is open.
+   */
+  sendImage(image: string, caption = ''): boolean {
+    if (this.value.phase !== 'connected' || !validImageDataUrl(image)) return false;
+    const text = caption.trim();
+    if (text && !cleanText(text)) return false;
+    if (this.value.role === 'guest' && !this.hostLink?.open) return false;
+    const member = this.value.members.find(m => m.id === this.value.localId);
+    if (!member) return false;
+    const msg: ChatMessage = {
+      id: crypto.randomUUID(), senderId: member.id, author: member.name,
+      text, image, sentAt: Date.now(),
+    };
+    this.emit({ messages: mergeMessages(this.value.messages, [msg]) });
+    const parts = splitImageMessage(msg.id, image, text, msg.sentAt,
+      this.value.role === 'host' ? member.id : undefined);
+    if (this.value.role === 'host') {
+      for (const link of this.connections.values()) {
+        if (link.open) for (const part of parts) link.send(part);
+      }
+    } else if (this.hostLink?.open) {
+      for (const part of parts) this.hostLink.send(part);
+    }
+    return true;
+  }
+
+  private receiveImagePart(senderId: string, part: ImageWirePart, relay: boolean): void {
+    if (this.value.phase !== 'connected') return;
+    const sender = this.value.members.find(m => m.id === senderId);
+    if (!sender) return;
+    const now = Date.now();
+    for (const [key, item] of this.imageBuffers) {
+      if (item.expires <= now) this.imageBuffers.delete(key);
+    }
+    const key = senderId + ':' + part.id;
+    let buffer = this.imageBuffers.get(key);
+    if (!buffer) {
+      if (this.imageBuffers.size >= 15 || this.value.messages.some(m => m.id === part.id)) return;
+      buffer = {
+        chunks: new Array<string | undefined>(part.total).fill(undefined),
+        size: 0, received: 0, total: part.total, mime: part.mime,
+        text: part.text, sentAt: part.sentAt, expires: now + 30_000,
+      };
+      this.imageBuffers.set(key, buffer);
+    }
+    if (part.total !== buffer.total || part.mime !== buffer.mime || part.text !== buffer.text
+        || part.sentAt !== buffer.sentAt || buffer.chunks[part.index] !== undefined) return;
+    buffer.chunks[part.index] = part.data;
+    buffer.size += part.data.length;
+    buffer.received++;
+    if (buffer.size > MAX_IMAGE_BASE64) {
+      this.imageBuffers.delete(key);
+      return;
+    }
+    if (buffer.received !== buffer.total) return;
+    this.imageBuffers.delete(key);
+    const dataUrl = 'data:' + buffer.mime + ';base64,' + buffer.chunks.join('');
+    if (!validImageDataUrl(dataUrl)) return;
+    const message: ChatMessage = {
+      id: part.id, senderId, author: sender.name, text: buffer.text,
+      image: dataUrl, sentAt: relay ? now : buffer.sentAt,
+    };
+    this.emit({ messages: mergeMessages(this.value.messages, [message]) });
+    if (relay && this.value.role === 'host') {
+      const parts = splitImageMessage(message.id, dataUrl, message.text, message.sentAt, senderId);
+      for (const link of this.connections.values()) {
+        if (link.open) for (const item of parts) link.send(item);
+      }
+    }
   }
 
   private mediaKey(kind: MediaKind, peerId: string, direction: 'in' | 'out'): string {

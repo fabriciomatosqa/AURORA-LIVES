@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type ReactNode } from 'react';
 import {
   Activity, ArrowRight, Bookmark, Check, ChevronDown, CircleHelp, Copy,
   Gauge, Hash, Headphones, Home, Info, Link2, LockKeyhole, Menu,
   MessageCircle, Mic, MicOff, MonitorUp, Moon, PictureInPicture2, Plus,
-  Maximize2, Minimize2, RadioTower, Send, Settings2, ShieldCheck, Sparkles, Sun, Trash2,
+  Maximize2, Minimize2, ImagePlus, ExternalLink, RadioTower, Send, Settings2, ShieldCheck, Sparkles, Sun, Trash2,
   Users, VideoOff, Volume2, VolumeX, Wifi, X,
 } from 'lucide-react';
 import { RoomSession, emptyRoom, type RemoteMedia, type RoomSnapshot } from './p2p/session';
@@ -15,6 +15,7 @@ import { UpdateIndicator, UpdateSettings } from './updates/UpdateSettings';
 import { UpdatePrompt } from './updates/UpdatePrompt';
 import { ConnectionSpeedTest } from './connection/ConnectionSpeedTest';
 import { isAndroidRuntime } from './platform';
+import { prepareChatImage } from './p2p/images';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { prepareRoomJoinSound, playRoomJoinSound, hasNewRemoteMember } from './sounds/roomJoinSound';
@@ -42,9 +43,13 @@ function Avatar({ name, own = false, size = 'normal' }: { name: string; own?: bo
   </span>;
 }
 
-export function MediaPlayer({ stream, muted, label }: { stream: MediaStream; muted: boolean; label: string }) {
+export function MediaPlayer({ stream, muted, label, localPreview = false }: {
+  stream: MediaStream; muted: boolean; label: string; localPreview?: boolean;
+}) {
   const video = useRef<HTMLVideoElement>(null);
   const tile = useRef<HTMLDivElement>(null);
+  const popout = useRef<Window | null>(null);
+  const [floating, setFloating] = useState(false);
   const fullscreenMode = useRef<'off' | 'native' | 'viewport'>('off');
   const windowFullscreenOwned = useRef(false);
   const enteringFullscreen = useRef(false);
@@ -158,9 +163,60 @@ export function MediaPlayer({ stream, muted, label }: { stream: MediaStream; mut
     }
   }
 
+  function closePopout() {
+    const opened = popout.current;
+    popout.current = null;
+    if (opened && !opened.closed) opened.close();
+    setFloating(false);
+  }
+
+  useEffect(() => () => {
+    const opened = popout.current;
+    popout.current = null;
+    if (opened && !opened.closed) opened.close();
+  }, []);
+
+  function openPreviewWindow() {
+    if (floating || (popout.current && !popout.current.closed)) {
+      closePopout();
+      return;
+    }
+    // An about:blank child inherits our origin: reuse the existing stream
+    // directly without renegotiating WebRTC or uploading to another service.
+    try {
+      const opened = window.open('', 'aurora-local-screen-preview',
+        'popup=yes,width=1000,height=650,resizable=yes,scrollbars=no');
+      if (opened) {
+        opened.document.title = 'AURORA LIVES — Minha transmissão';
+        opened.document.body.replaceChildren();
+        opened.document.body.style.cssText = 'margin:0;background:#080f20;color:white;font:14px sans-serif;display:flex;flex-direction:column;height:100vh';
+        const heading = opened.document.createElement('div');
+        heading.textContent = 'Prévia da minha transmissão — feche esta janela para voltar ao programa';
+        heading.style.cssText = 'padding:12px 16px;background:#13213b';
+        const display = opened.document.createElement('video');
+        display.autoplay = true;
+        display.muted = true;
+        display.controls = true;
+        display.style.cssText = 'width:100%;height:calc(100% - 44px);object-fit:contain;background:black';
+        display.srcObject = stream;
+        opened.document.body.append(heading, display);
+        void display.play().catch(() => {});
+        popout.current = opened;
+        setError('');
+        return;
+      }
+    } catch { /* Popup blocked by Tauri/WebView policy: float in-app. */ }
+    setFloating(true);
+    setError('Janela externa indisponível: exibindo janela flutuante dentro do AURORA.');
+  }
+
   async function floatVideo() {
     const node = video.current;
-    if (!node?.requestPictureInPicture || !document.pictureInPictureEnabled) return;
+    if (!node) return;
+    if (!node.requestPictureInPicture || !document.pictureInPictureEnabled) {
+      setError('Picture-in-Picture não é suportado neste dispositivo. Use a opção Janela.');
+      return;
+    }
     try {
       setError('');
       if (fullscreenMode.current !== 'off') exitFullscreen();
@@ -170,17 +226,22 @@ export function MediaPlayer({ stream, muted, label }: { stream: MediaStream; mut
     }
   }
 
-  return <div ref={tile} className={'stream-tile' + (fullscreen ? ' stream-tile-fullscreen' : '')}
+  return <div ref={tile} className={'stream-tile' + (fullscreen ? ' stream-tile-fullscreen' : '') + (localPreview ? ' local-preview-tile' : '') + (floating ? ' local-preview-floating' : '')}
     data-fullscreen={fullscreen ? 'true' : 'false'}>
     <video ref={video} autoPlay playsInline muted={muted} controls aria-label={label} />
     <span className="stream-title"><span className="stream-title-icon"><MonitorUp size={14}/></span>{label}</span>
-    <button type="button" className="stream-fullscreen-toggle icon-control"
+    {!localPreview && <button type="button" className="stream-fullscreen-toggle icon-control"
       onClick={() => void toggleFullscreen()} aria-pressed={fullscreen}
       aria-label={(fullscreen ? 'Sair da tela cheia de ' : 'Exibir em tela cheia: ') + label}
       title={fullscreen ? 'Sair da tela cheia' : 'Tela cheia'}>
       {fullscreen ? <Minimize2 size={21}/> : <Maximize2 size={21}/>}
-    </button>
-    {typeof document !== 'undefined' && document.pictureInPictureEnabled && !fullscreen && <button
+    </button>}
+    {localPreview && <button type="button" className="stream-popup-toggle icon-control"
+      onClick={openPreviewWindow} aria-label="Minha transmissão em janela"
+      title="Abrir em janela separada (ou flutuante)">
+      <ExternalLink size={19}/>
+    </button>}
+    {(!fullscreen || localPreview) && <button
       type="button" className="float-video icon-control" onClick={() => void floatVideo()}
       aria-label={'Exibir ' + label + ' em janela flutuante'} title="Janela flutuante">
       <PictureInPicture2 size={17}/>
@@ -189,15 +250,16 @@ export function MediaPlayer({ stream, muted, label }: { stream: MediaStream; mut
   </div>;
 }
 
-/** Local capture never renders inside itself: prevents hall-of-mirrors on a shared monitor.
- * The actual MediaStream stays owned by RoomSession and remains sent to peers. */
-export function LocalBroadcastStatus() {
-  return <div className="local-broadcast-status" role="status" aria-label="Sua transmissão está ativa">
-    <span className="local-broadcast-symbol"><MonitorUp size={27}/></span>
-    <strong>Sua tela está sendo transmitida</strong>
-    <p>A prévia local está oculta para evitar o efeito espelho.
-      Os outros participantes continuam recebendo sua tela normalmente.</p>
-    <span className="local-broadcast-hint">Para assistir em tela cheia, use outro dispositivo participante.</span>
+/** Keep local preview visible and small: fullscreen of the same monitor can
+ * recursively capture the AURORA window. Remote spectators retain fullscreen. */
+export function LocalBroadcastPreview({ stream }: { stream: MediaStream }) {
+  return <div className="local-broadcast-preview">
+    <div className="local-preview-heading"><MonitorUp size={16}/>
+      <strong>Minha transmissão</strong><span>Prévia local</span></div>
+    <MediaPlayer stream={stream} muted label="Sua transmissão" localPreview/>
+    <p>Você pode assistir aqui, usar PiP ou abrir em janela. Se compartilhar o
+      monitor inteiro, a prévia pode aparecer repetida na captura. Para evitar
+      esse efeito, compartilhe uma janela específica ou use outro monitor.</p>
   </div>;
 }
 
@@ -233,6 +295,9 @@ export default function App() {
   const [nickname, setNickname] = useState(() => fromStorage('aurora.nickname', ''));
   const [invite, setInvite] = useState('');
   const [message, setMessage] = useState('');
+  const [imageDraft, setImageDraft] = useState<string | null>(null);
+  const [imagePreparing, setImagePreparing] = useState(false);
+  const imageInput = useRef<HTMLInputElement>(null);
   const [feedback, setFeedback] = useState('');
   const [copied, setCopied] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -404,6 +469,8 @@ export default function App() {
     session.current = null;
     setRoom({ ...emptyRoom });
     setMessage('');
+    setImageDraft(null);
+    setImagePreparing(false);
     setFeedback('');
     setCopied(false);
     setInspectorOpen(false);
@@ -443,12 +510,39 @@ export default function App() {
     try { localStorage.setItem(SAVED_INVITES_KEY, JSON.stringify(remaining)); } catch { /* indisponível */ }
   }
 
+  async function queueChatImage(file: File) {
+    setImagePreparing(true);
+    try {
+      const prepared = await prepareChatImage(file);
+      setImageDraft(prepared);
+      setFeedback('');
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Não foi possível preparar a imagem.');
+    } finally {
+      setImagePreparing(false);
+    }
+  }
+
+  function pasteChatImage(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(event.clipboardData.items)
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile()).filter((file): file is File => !!file);
+    if (files.length === 0) return; // Normal text paste is unaffected.
+    event.preventDefault();
+    void queueChatImage(files[0]);
+  }
+
   function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (session.current?.send(message)) {
+    if (imagePreparing) return;
+    const sent = imageDraft
+      ? session.current?.sendImage(imageDraft, message)
+      : session.current?.send(message);
+    if (sent) {
       setMessage('');
+      setImageDraft(null);
       setFeedback('');
-    } else if (message.trim()) {
+    } else if (message.trim() || imageDraft) {
       setFeedback('Não foi possível enviar a mensagem. Verifique a conexão.');
     }
   }
@@ -578,7 +672,7 @@ export default function App() {
         <UpdateIndicator updater={updater} onClick={() => setSettingsOpen(true)}/>
         <span className={'topbar-status ' + (connected ? 'topbar-status-live' : '')}>
           <span className="status-indicator"/>
-          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.36'}
+          {connected ? 'Conexão ativa' : joining ? 'Conectando' : 'Prévia 0.0.37'}
         </span>
         <button className="topbar-more icon-control" onClick={() => { setInspectorOpen(value => !value); setSidebarOpen(false); }} aria-expanded={inspectorOpen}
           aria-label="Informações sobre a conexão" title="Informações"><Activity size={19}/></button>
@@ -721,7 +815,7 @@ export default function App() {
             </header>
 
             <div className="stage-screen">
-              {room.localScreen && <LocalBroadcastStatus/>}
+              {room.localScreen && <LocalBroadcastPreview stream={room.localScreen}/>}
               {liveStreams.map(item => <MediaPlayer key={item.id} stream={item.stream} muted={false} label={'Transmissão de ' + memberName(item.peerId)}/>)}
               {!broadcasting && <div className="stage-empty">
                 <div className="stage-empty-art" aria-hidden="true">
@@ -812,12 +906,32 @@ export default function App() {
                 <Avatar name={item.author} size="small" own={item.senderId === room.localId}/>
                 <div className="chat-message-content"><div className="chat-message-meta"><strong>{item.author}</strong><time dateTime={new Date(item.sentAt).toISOString()}>
                   {new Date(item.sentAt).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</time></div>
-                  <p>{item.text}</p></div>
+                  {item.text && <p>{item.text}</p>}
+                  {item.image && <img className="chat-image-sent" src={item.image}
+                    alt={'Imagem enviada por ' + item.author} loading="lazy"/>}</div>
               </article>)}
             </div>
+            {imageDraft && <div className="chat-image-attachment" role="status">
+              <img src={imageDraft} alt="Prévia da imagem que será enviada"/>
+              <span>Imagem pronta para enviar. Você também pode escrever uma legenda.</span>
+              <button type="button" onClick={() => setImageDraft(null)} aria-label="Remover imagem" title="Remover imagem"><X size={17}/></button>
+            </div>}
             <form className="chat-composer" onSubmit={sendMessage}>
               <label className="sr-only" htmlFor="message-text">Escrever mensagem</label>
+              <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp"
+                hidden aria-label="Selecionar imagem do dispositivo"
+                onChange={event => {
+                  const file = event.currentTarget.files?.[0];
+                  if (file) void queueChatImage(file);
+                  event.currentTarget.value = '';
+                }}/>
+              <button type="button" className="chat-add-image"
+                onClick={() => imageInput.current?.click()} disabled={imagePreparing}
+                aria-label="Anexar imagem" title="Colar com Ctrl+V ou anexar imagem">
+                <ImagePlus size={19}/>
+              </button>
               <textarea rows={1} id="message-text" maxLength={2000} value={message}
+                onPaste={pasteChatImage}
                 onChange={event => setMessage(event.target.value)}
                 onKeyDown={event => {
                   if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -825,10 +939,10 @@ export default function App() {
                     event.currentTarget.form?.requestSubmit();
                   }
                 }}
-                placeholder="Escreva uma mensagem..."/>
-              <button type="submit" className="chat-send" disabled={!message.trim()} aria-label="Enviar mensagem" title="Enviar mensagem"><Send size={19}/></button>
+                placeholder="Escreva ou cole uma imagem com Ctrl+V..."/>
+              <button type="submit" className="chat-send" disabled={imagePreparing || (!message.trim() && !imageDraft)} aria-label="Enviar mensagem" title="Enviar mensagem"><Send size={19}/></button>
             </form>
-            <p className="composer-hint"><ShieldCheck size={13}/> Conversa temporária, sem histórico em nuvem</p>
+            <p className="composer-hint"><ShieldCheck size={13}/> Texto e imagens temporários, enviados diretamente por WebRTC (limite ~110 KB por imagem)</p>
           </section>
 
           <section className="mobile-members-panel" aria-label="Participantes da sala">
@@ -936,7 +1050,7 @@ export default function App() {
           <UpdateSettings updater={updater} connected={connected}/>
           <div className="privacy-disclaimer"><LockKeyhole size={19}/><p>Esta versão usa apelidos locais, não contas. Quem souber o código poderá entrar na sala enquanto o anfitrião estiver online.</p></div>
         </div>
-        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.36</span>
+        <footer className="dialog-footer"><span>AURORA LIVES · v0.0.37</span>
           <button onClick={() => setSettingsOpen(false)}>Concluído <ArrowRight size={17}/></button></footer>
       </section>
     </div>}
