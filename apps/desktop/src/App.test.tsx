@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import App, { MediaPlayer } from './App';
+import App, { LocalBroadcastStatus, MediaPlayer } from './App';
 
 describe('nova interface AURORA LIVES', () => {
   it('exibe as opções reais de criar e entrar em uma sala por código', () => {
@@ -12,7 +12,7 @@ describe('nova interface AURORA LIVES', () => {
     expect(html).toContain('Informe um nome diferente de Visitante');
     expect(html).toContain('Sem cadastro');
     expect(html).toContain('AURORA LIVES');
-    expect(html).toContain('Prévia 0.0.35');
+    expect(html).toContain('Prévia 0.0.36');
   });
 
   it('mantém a logo original e as regiões de navegação acessíveis', () => {
@@ -34,6 +34,19 @@ describe('nova interface AURORA LIVES', () => {
     expect(html.toLowerCase()).toContain('playsinline=""');
     expect(html).toContain('data-fullscreen="false"');
     expect(html).toContain('Transmissão de Branko');
+  });
+
+  it('evita o espelho infinito da própria tela sem bloquear os espectadores', () => {
+    const local = renderToStaticMarkup(<LocalBroadcastStatus />);
+    expect(local).toContain('Sua tela está sendo transmitida');
+    expect(local).toContain('prévia local está oculta');
+    expect(local).toContain('Os outros participantes continuam recebendo');
+    expect(local).not.toContain('<video');
+    expect(local).not.toContain('stream-fullscreen-toggle');
+
+    const remote = renderToStaticMarkup(<MediaPlayer
+      stream={null as unknown as MediaStream} muted={false} label="Transmissão de Celular"/>);
+    expect(remote).toContain('Exibir em tela cheia: Transmissão de Celular');
   });
 
   it('não apresenta funcionalidades futuras como ações disponíveis', () => {

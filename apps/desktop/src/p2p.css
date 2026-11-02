@@ -147,8 +147,14 @@
 .toolbar-leave { color: var(--danger); border-color: rgba(230, 120, 146, .2); background: rgba(221, 92, 120, .06); }
 .toolbar-leave:hover { background: rgba(221, 92, 120, .13); color: var(--danger); }
 
-/* Live stage and conversation */
-.room-content { display: grid; grid-template-columns: minmax(0,1.18fr) minmax(300px,.82fr); gap: 16px; padding: 18px 20px 20px; flex: 1; min-height: 0; overflow: hidden; }
+/* Live stage and conversation. Desktop shows participants only in the
+   left sidebar; the separate panel is reserved for Android's People tab. */
+.mobile-members-panel { display: none; }
+.room-content {
+  display: grid; grid-template-columns: minmax(0,1.25fr) minmax(300px,.75fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 16px; padding: 18px 20px 20px; flex: 1; min-height: 0; overflow: hidden;
+}
 .live-stage, .conversation-panel {
   position: relative; min-width: 0; min-height: 0;
   background: var(--surface); border: 1px solid var(--line-strong);
@@ -168,6 +174,23 @@
   min-height: 248px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
 }
 .stage-screen:has(.stage-empty) { grid-template-columns: minmax(0,1fr); }
+/* The host must not watch a live capture of the same screen it is
+   broadcasting; that would recursively capture the player itself. */
+.local-broadcast-status {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; text-align: center; gap: 11px;
+  min-height: 225px; padding: 25px 20px; color: var(--text-soft);
+  border-radius: 12px; background: radial-gradient(ellipse at center, rgba(65,183,188,.1),transparent 70%);
+}
+.local-broadcast-symbol {
+  width: 58px; height: 58px; display: grid; place-items: center;
+  color: var(--accent); border-radius: 18px; border: 1px solid var(--line-strong);
+  background: var(--accent-panel);
+}
+.local-broadcast-status strong { color: var(--text); font-size: 16px; }
+.local-broadcast-status p { font-size: 12px; max-width: 420px; line-height: 1.65; margin: 0; }
+.local-broadcast-hint { font-size: 11px; color: var(--accent); }
+
 .stage-empty { position: relative; display: flex; align-items: center; flex-direction: column; justify-content: center; min-height: 226px; gap: 9px; text-align: center; overflow: hidden; padding: 20px; }
 .stage-empty:before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(rgba(102, 169, 219, .055) 1px, transparent 1px), linear-gradient(90deg, rgba(102, 169, 219, .045) 1px, transparent 1px); background-size: 27px 27px; mask-image: radial-gradient(ellipse, black, transparent 75%); }
 .stage-empty-art { display: grid; place-items: center; width: 113px; height: 110px; position: relative; }

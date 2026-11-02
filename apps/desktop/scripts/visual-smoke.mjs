@@ -76,6 +76,16 @@ try {
   await page.goto('http://127.0.0.1:1420', { waitUntil: 'networkidle' });
   await page.getByRole('button', { name: 'Criar sala agora' }).waitFor();
   await page.getByRole('button', { name: 'Entrar na sala' }).waitFor();
+  // The separate mobile People pane must never create a third grid row on PC.
+  const desktopMembersDisplay = await page.evaluate(() => {
+    const members = document.createElement('section');
+    members.className = 'mobile-members-panel';
+    document.body.append(members);
+    const display = getComputedStyle(members).display;
+    members.remove();
+    return display;
+  });
+  assert.equal(desktopMembersDisplay, 'none', 'Painel de participantes duplicado visível no desktop');
   await checkPlayerFullscreen(page, 'desktop 1440 × 900');
   await checkNoOverflow(page, '1440');
   await page.screenshot({ path: resolve(screenshots, 'aurora-desktop-dark.png'), fullPage: true });
@@ -114,6 +124,19 @@ try {
   await android.goto('http://127.0.0.1:1420', { waitUntil: 'networkidle' });
   await android.getByRole('navigation', { name: 'Navegação Android' }).waitFor();
   await android.getByRole('button', { name: 'Criar sala agora' }).waitFor();
+  // Android still needs its own full-page People tab.
+  const androidMembersDisplay = await android.evaluate(() => {
+    const room = document.createElement('div');
+    room.className = 'room-content mobile-view-members';
+    const members = document.createElement('section');
+    members.className = 'mobile-members-panel';
+    room.append(members);
+    document.body.append(room);
+    const display = getComputedStyle(members).display;
+    room.remove();
+    return display;
+  });
+  assert.notEqual(androidMembersDisplay, 'none', 'Aba Pessoas do Android desapareceu');
   await checkPlayerFullscreen(android, 'Android retrato 393 × 873');
   await checkNoOverflow(android, 'Android portrait 393');
   await android.screenshot({ path: resolve(screenshots, 'aurora-android-portrait.png'), fullPage: true });
