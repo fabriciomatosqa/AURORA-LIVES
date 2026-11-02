@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type ReactNode } from 'react';
 import {
   Activity, ArrowRight, Bookmark, Check, ChevronDown, CircleHelp, Copy,
   Gauge, Hash, Headphones, Home, Info, Link2, LockKeyhole, Menu,
@@ -295,6 +295,9 @@ export default function App() {
   const [nickname, setNickname] = useState(() => fromStorage('aurora.nickname', ''));
   const [invite, setInvite] = useState('');
   const [message, setMessage] = useState('');
+  const [imageDraft, setImageDraft] = useState<string | null>(null);
+  const [imagePreparing, setImagePreparing] = useState(false);
+  const imageInput = useRef<HTMLInputElement>(null);
   const [feedback, setFeedback] = useState('');
   const [copied, setCopied] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -466,6 +469,8 @@ export default function App() {
     session.current = null;
     setRoom({ ...emptyRoom });
     setMessage('');
+    setImageDraft(null);
+    setImagePreparing(false);
     setFeedback('');
     setCopied(false);
     setInspectorOpen(false);
@@ -505,12 +510,39 @@ export default function App() {
     try { localStorage.setItem(SAVED_INVITES_KEY, JSON.stringify(remaining)); } catch { /* indisponível */ }
   }
 
+  async function queueChatImage(file: File) {
+    setImagePreparing(true);
+    try {
+      const prepared = await prepareChatImage(file);
+      setImageDraft(prepared);
+      setFeedback('');
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Não foi possível preparar a imagem.');
+    } finally {
+      setImagePreparing(false);
+    }
+  }
+
+  function pasteChatImage(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(event.clipboardData.items)
+      .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
+      .map(item => item.getAsFile()).filter((file): file is File => !!file);
+    if (files.length === 0) return; // Normal text paste is unaffected.
+    event.preventDefault();
+    void queueChatImage(files[0]);
+  }
+
   function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (session.current?.send(message)) {
+    if (imagePreparing) return;
+    const sent = imageDraft
+      ? session.current?.sendImage(imageDraft, message)
+      : session.current?.send(message);
+    if (sent) {
       setMessage('');
+      setImageDraft(null);
       setFeedback('');
-    } else if (message.trim()) {
+    } else if (message.trim() || imageDraft) {
       setFeedback('Não foi possível enviar a mensagem. Verifique a conexão.');
     }
   }
@@ -874,12 +906,32 @@ export default function App() {
                 <Avatar name={item.author} size="small" own={item.senderId === room.localId}/>
                 <div className="chat-message-content"><div className="chat-message-meta"><strong>{item.author}</strong><time dateTime={new Date(item.sentAt).toISOString()}>
                   {new Date(item.sentAt).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}</time></div>
-                  <p>{item.text}</p></div>
+                  {item.text && <p>{item.text}</p>}
+                  {item.image && <img className="chat-image-sent" src={item.image}
+                    alt={'Imagem enviada por ' + item.author} loading="lazy"/>}</div>
               </article>)}
             </div>
+            {imageDraft && <div className="chat-image-attachment" role="status">
+              <img src={imageDraft} alt="Prévia da imagem que será enviada"/>
+              <span>Imagem pronta para enviar. Você também pode escrever uma legenda.</span>
+              <button type="button" onClick={() => setImageDraft(null)} aria-label="Remover imagem" title="Remover imagem"><X size={17}/></button>
+            </div>}
             <form className="chat-composer" onSubmit={sendMessage}>
               <label className="sr-only" htmlFor="message-text">Escrever mensagem</label>
+              <input ref={imageInput} type="file" accept="image/png,image/jpeg,image/webp"
+                hidden aria-label="Selecionar imagem do dispositivo"
+                onChange={event => {
+                  const file = event.currentTarget.files?.[0];
+                  if (file) void queueChatImage(file);
+                  event.currentTarget.value = '';
+                }}/>
+              <button type="button" className="chat-add-image"
+                onClick={() => imageInput.current?.click()} disabled={imagePreparing}
+                aria-label="Anexar imagem" title="Colar com Ctrl+V ou anexar imagem">
+                <ImagePlus size={19}/>
+              </button>
               <textarea rows={1} id="message-text" maxLength={2000} value={message}
+                onPaste={pasteChatImage}
                 onChange={event => setMessage(event.target.value)}
                 onKeyDown={event => {
                   if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -887,10 +939,10 @@ export default function App() {
                     event.currentTarget.form?.requestSubmit();
                   }
                 }}
-                placeholder="Escreva uma mensagem..."/>
-              <button type="submit" className="chat-send" disabled={!message.trim()} aria-label="Enviar mensagem" title="Enviar mensagem"><Send size={19}/></button>
+                placeholder="Escreva ou cole uma imagem com Ctrl+V..."/>
+              <button type="submit" className="chat-send" disabled={imagePreparing || (!message.trim() && !imageDraft)} aria-label="Enviar mensagem" title="Enviar mensagem"><Send size={19}/></button>
             </form>
-            <p className="composer-hint"><ShieldCheck size={13}/> Conversa temporária, sem histórico em nuvem</p>
+            <p className="composer-hint"><ShieldCheck size={13}/> Texto e imagens temporários, enviados diretamente por WebRTC (limite ~110 KB por imagem)</p>
           </section>
 
           <section className="mobile-members-panel" aria-label="Participantes da sala">
