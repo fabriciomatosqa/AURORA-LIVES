@@ -125,6 +125,26 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar ícones Aurora." }
           npm run tauri -- build --no-bundle
           if ($LASTEXITCODE -ne 0) { throw "Falha ao compilar o aplicativo." }
+      - name: Validar sintaxe e bloqueio de assinatura ausente
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "scripts/sign-windows-artifact.ps1"),
+            [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) { throw "PowerShell de assinatura com sintaxe inválida: $($errors -join '; ')" }
+          $env:WINDOWS_CODESIGN_PFX_BASE64 = ""
+          $env:WINDOWS_CODESIGN_PFX_PASSWORD = ""
+          try {
+            ./scripts/sign-windows-artifact.ps1 -FilePath "src-tauri/target/release/aurora-lives.exe"
+            throw "REGRESSÃO: release sem certificado seria assinada!"
+          } catch {
+            if ($_.Exception.Message -notmatch "Publicação Windows bloqueada") { throw }
+            Write-Host "OK: nenhum release Windows sem assinatura confiável."
+          }
+
       - name: Compilar instalador Inno Setup
         shell: pwsh
         run: |
